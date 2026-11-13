@@ -267,7 +267,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const choice = await vscode.window.showWarningMessage(
         t(
           "Qoder Direct: importing this PAT replaces the current sign-in ({0}).",
-          existing.uid.slice(0, 8),
+          existing.name ?? existing.uid.slice(0, 8),
         ),
         { modal: true },
         replace,
@@ -377,6 +377,7 @@ export function activate(context: vscode.ExtensionContext): void {
       ) {
         return;
       }
+      await auth.clearPending();
       logger.error("PAT import failed", error);
       void vscode.window.showErrorMessage(
         t("Qoder Direct: PAT import failed: {0}", errorMessage(error)),
