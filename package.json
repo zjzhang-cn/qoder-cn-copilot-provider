@@ -1,0 +1,102 @@
+{
+  "name": "qoder-cn-copilot-provider",
+  "displayName": "%displayName%",
+  "description": "%description%",
+  "version": "0.1.0",
+  "publisher": "zjzhang-cn",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.136.0"
+  },
+  "categories": [
+    "AI",
+    "Chat"
+  ],
+  "keywords": [
+    "qoder",
+    "language model",
+    "chat",
+    "byok",
+    "direct"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "onLanguageModelChatProvider:qoder-direct"
+  ],
+  "contributes": {
+    "languageModelChatProviders": [
+      {
+        "vendor": "qoder-direct",
+        "displayName": "%provider.displayName%",
+        "managementCommand": "qoderDirect.signIn",
+        "configuration": {
+          "type": "object",
+          "properties": {
+            "account": {
+              "type": "string",
+              "title": "Account",
+              "description": "Qoder account used by this provider group.",
+              "readOnly": true
+            },
+            "instance": {
+              "type": "string",
+              "title": "VPC Instance",
+              "description": "Empty for the public CN gateway.",
+              "readOnly": true
+            }
+          }
+        }
+      }
+    ],
+    "commands": [
+      {
+        "command": "qoderDirect.signIn",
+        "title": "%command.signIn.title%",
+        "category": "Qoder Direct"
+      },
+      {
+        "command": "qoderDirect.signOut",
+        "title": "%command.signOut.title%",
+        "category": "Qoder Direct"
+      },
+      {
+        "command": "qoderDirect.refreshModels",
+        "title": "%command.refreshModels.title%",
+        "category": "Qoder Direct"
+      },
+      {
+        "command": "qoderDirect.createProviderGroup",
+        "title": "%command.createProviderGroup.title%",
+        "category": "Qoder Direct"
+      },
+      {
+        "command": "qoderDirect.deleteProviderGroup",
+        "title": "%command.deleteProviderGroup.title%",
+        "category": "Qoder Direct"
+      },
+      {
+        "command": "qoderDirect.showLogs",
+        "title": "%command.showLogs.title%",
+        "category": "Qoder Direct"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "npm run build && vsce package --no-dependencies --allow-missing-repository",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/vscode": "^1.136.0",
+    "@vscode/vsce": "^4.1.1",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

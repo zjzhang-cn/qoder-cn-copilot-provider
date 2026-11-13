@@ -1,0 +1,197 @@
+import { describe, expect, it } from "vitest";
+import type {
+  BackendClient,
+  ChatRequest,
+  StreamHandlers,
+  ToolCallResult,
+} from "../src/backend";
+import type { HubModel } from "../src/core/types";
+import type { Logger } from "../src/logger";
+import { DIRECT_PROFILE } from "../src/profiles";
+import { QoderProvider } from "../src/provider";
+import { ModelStore } from "../src/core/modelStore";
+import type * as vscodeTypes from "vscode";
+import * as vscode from "./mocks/vscode";
+
+const MODEL: HubModel = {
+  id: "qmodel_38max",
+  name: "Qwen3.8-Max",
+  upstream_key: "qmodel_38max",
+  enabled: true,
+  context_length: 200_000,
+  supports_tool_calls: true,
+  capabilities: { tool_calls: true, reasoning: true },
+};
+
+class FakeBackend implements BackendClient {
+  readonly requests: ChatRequest[] = [];
+  tools: ToolCallResult[] = [];
+
+  async fetchModels(): Promise<HubModel[]> {
+    return [MODEL];
+  }
+
+  async streamChat(
+    request: ChatRequest,
+    handlers: StreamHandlers,
+  ): Promise<void> {
+    this.requests.push(request);
+    handlers.onText("Hello");
+    for (const call of this.tools) handlers.onToolCall(call);
+  }
+}
+
+function createProvider() {
+  const backend = new FakeBackend();
+  const values = new Map<string, unknown>();
+  const store = new ModelStore({
+    client: backend,
+    memento: {
+      get<T>(key: string): T | undefined {
+        return values.get(key) as T | undefined;
+      },
+      update(key: string, value: unknown): void {
+        values.set(key, value);
+      },
+    },
+    cacheKey: DIRECT_PROFILE.cacheKey,
+    getExcludedModels: () => [],
+    getModelOverrides: () => ({}),
+  });
+  const log = {
+    info: () => undefined,
+    error: () => undefined,
+  } as unknown as Logger;
+  const provider = new QoderProvider(store, backend, log, DIRECT_PROFILE);
+  return { provider, backend };
+}
+
+function token(): vscodeTypes.CancellationToken {
+  return {
+    isCancellationRequested: false,
+    onCancellationRequested: () => ({ dispose: () => undefined }),
+  } as unknown as vscodeTypes.CancellationToken;
+}
+
+function chatOptions(
+  modelConfiguration?: Record<string, unknown>,
+): vscodeTypes.ProvideLanguageModelChatResponseOptions {
+  return {
+    tools: [],
+    toolMode: 1 as vscodeTypes.LanguageModelChatToolMode,
+    ...(modelConfiguration ? { modelConfiguration } : {}),
+  } as unknown as vscodeTypes.ProvideLanguageModelChatResponseOptions;
+}
+
+function progress(parts: unknown[]): vscodeTypes.Progress<vscodeTypes.LanguageModelResponsePart> {
+  return {
+    report: (part: vscodeTypes.LanguageModelResponsePart) => {
+      parts.push(part);
+    },
+  } as vscodeTypes.Progress<vscodeTypes.LanguageModelResponsePart>;
+}
+
+describe("QoderProvider (direct)", () => {
+  it("does not return groupless models", async () => {
+    const { provider } = createProvider();
+    const models = await provider.provideLanguageModelChatInformation(
+      { silent: true },
+      token(),
+    );
+    expect(models).toEqual([]);
+    provider.dispose();
+  });
+
+  it("returns models through the provider group", async () => {
+    const { provider } = createProvider();
+    const models = await provider.provideLanguageModelChatInformation(
+      {
+        silent: false,
+        configuration: {},
+      } as unknown as vscodeTypes.PrepareLanguageModelChatModelOptions,
+      token(),
+    );
+    expect(models).toHaveLength(1);
+    expect(models[0]).toMatchObject({
+      id: "qmodel_38max",
+      name: "Qwen3.8-Max",
+      isUserSelectable: true,
+      isBYOK: true,
+    });
+    provider.dispose();
+  });
+
+  it("forwards model configuration and streams text", async () => {
+    const { provider, backend } = createProvider();
+    await provider.provideLanguageModelChatInformation(
+      {
+        silent: false,
+        configuration: {},
+      } as unknown as vscodeTypes.PrepareLanguageModelChatModelOptions,
+      token(),
+    );
+    const parts: unknown[] = [];
+    await provider.provideLanguageModelChatResponse(
+      {
+        id: "qmodel_38max",
+        name: "Qwen3.8-Max",
+        family: "qmodel_38max",
+        version: "1.0.0",
+        maxInputTokens: 200_000,
+        maxOutputTokens: 16_000,
+        capabilities: { toolCalling: true, imageInput: false },
+      },
+      [{ role: 1, content: [{ value: "hi" }], name: undefined }],
+      chatOptions({ reasoningEffort: "high", contextSize: 200_000 }),
+      progress(parts),
+      token(),
+    );
+    expect(backend.requests[0]).toMatchObject({
+      model: "qmodel_38max",
+      reasoningEffort: "high",
+      contextSize: 200_000,
+    });
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toBeInstanceOf(vscode.LanguageModelTextPart);
+    expect((parts[0] as vscode.LanguageModelTextPart).value).toBe("Hello");
+    provider.dispose();
+  });
+
+  it("streams tool calls", async () => {
+    const { provider, backend } = createProvider();
+    backend.tools = [
+      { callId: "call_1", name: "read_file", input: { path: "a.txt" } },
+    ];
+    await provider.provideLanguageModelChatInformation(
+      {
+        silent: false,
+        configuration: {},
+      } as unknown as vscodeTypes.PrepareLanguageModelChatModelOptions,
+      token(),
+    );
+    const parts: unknown[] = [];
+    await provider.provideLanguageModelChatResponse(
+      {
+        id: "qmodel_38max",
+        name: "Qwen3.8-Max",
+        family: "qmodel_38max",
+        version: "1.0.0",
+        maxInputTokens: 200_000,
+        maxOutputTokens: 16_000,
+        capabilities: { toolCalling: true, imageInput: false },
+      },
+      [{ role: 1, content: [{ value: "read" }], name: undefined }],
+      chatOptions(),
+      progress(parts),
+      token(),
+    );
+    expect(parts).toHaveLength(2);
+    expect(parts[1]).toBeInstanceOf(vscode.LanguageModelToolCallPart);
+    expect(parts[1]).toMatchObject({
+      callId: "call_1",
+      name: "read_file",
+      input: { path: "a.txt" },
+    });
+    provider.dispose();
+  });
+});

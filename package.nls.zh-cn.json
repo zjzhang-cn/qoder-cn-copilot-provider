@@ -1,0 +1,11 @@
+{
+  "displayName": "Qoder CN Provider for Copilot",
+  "description": "在 VS Code 聊天中直连 Qoder CN，并将模型注册为原生语言模型提供方。",
+  "provider.displayName": "Qoder（直连）",
+  "command.signIn.title": "登录 (Sign In)",
+  "command.signOut.title": "退出登录 (Sign Out)",
+  "command.refreshModels.title": "刷新模型 (Refresh Models)",
+  "command.createProviderGroup.title": "创建模型提供方分组 (Create Provider Group)",
+  "command.deleteProviderGroup.title": "删除模型提供方分组 (Delete Provider Group)",
+  "command.showLogs.title": "显示日志 (Show Logs)"
+}

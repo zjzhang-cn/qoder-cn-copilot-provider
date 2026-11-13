@@ -1,0 +1,16 @@
+.vscode/**
+src/**
+test/**
+node_modules/**
+coverage/**
+AGENTS.md
+assets/**
+esbuild.mjs
+vitest.config.mts
+tsconfig.json
+package-lock.json
+**/*.map
+**/*.ts
+**/*.mts
+.gitignore
+.DS_Store
