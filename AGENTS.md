@@ -17,7 +17,7 @@
 - VPC accepts only a bare instance name (`acme`); derive website/openapi/gateway hosts. No public fallback for VPC.
 - Model ids are Qoder `upstream_key`s; display names are UI-only. The model list is a signed **GET with a body** (`node:https`, never global `fetch`).
 - Chat uses the outer Qoder SSE envelope, `model_config.max_input_tokens` for Context Size, `reasoning_effort` for Effort Level, and a conversation id derived from workspace + system prompt + first user message.
-- Token usage is forwarded to VS Code as a `LanguageModelDataPart` with mime `"usage"` carrying the upstream OpenAI-style usage JSON (the stable-API channel the built-in providers use); malformed usage is ignored, and usage is also logged.
+- Token usage is forwarded to VS Code as a `LanguageModelDataPart` with mime `"usage"` carrying the upstream OpenAI-style usage JSON (the stable-API channel the built-in providers use); malformed usage is ignored, and usage is also logged. **Cached-input tokens cannot be shown**: VS Code's only `"usage"` decoder reads prompt/completion/reasoning tokens and never builds the `modelTotals[].cachedTokens` the cached line needs — that flows exclusively through the built-in Copilot metadata channel (verified against shipped binaries + live test; a `_meta.turnTokenTotals` attempt was ignored).
 - Models are only served through the provider group; groupless discovery returns `[]`. Deleting the group removes models; sign-out is separate.
 - One chat at a time + 300ms gap; `DirectLimiter` coordinates across VS Code windows via a lock file.
 - Fixed protocol version constants; log version-gate errors instead of forging a higher client version.

@@ -185,7 +185,7 @@ export class QoderProvider
           },
           onUsage: (usage) => {
             this.log.info(`Usage: ${JSON.stringify(usage)}`);
-            this.reportUsage(progress, usage, model.id);
+            this.reportUsage(progress, usage);
           },
         },
         controller.signal,
@@ -221,14 +221,14 @@ export class QoderProvider
    * usage JSON (prompt_tokens / completion_tokens / ...). This is the same
    * stable-API channel the built-in providers use; without it the UI shows 0.
    *
-   * The cached-input line is rendered from `modelTotals[].cachedTokens`, which
-   * VS Code derives from a `_meta.turnTokenTotals` array. The plain usage
-   * fields alone do not surface it, so we attach that metadata additively.
+   * NOTE: the cached-input line cannot be surfaced by a third-party provider.
+   * VS Code's only "usage" decoder reads prompt/completion/reasoning tokens
+   * and never builds the modelTotals[].cachedTokens the cached line needs;
+   * that data flows exclusively through the built-in Copilot metadata channel.
    */
   private reportUsage(
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     usage: unknown,
-    modelId: string,
   ): void {
     if (!isRecord(usage)) return;
     const promptTokens = usage.prompt_tokens;
@@ -239,31 +239,10 @@ export class QoderProvider
     ) {
       return;
     }
-    const payload: Record<string, unknown> = { ...usage };
-    const details = isRecord(usage.prompt_tokens_details)
-      ? usage.prompt_tokens_details
-      : undefined;
-    const cachedTokens =
-      details && typeof details.cached_tokens === "number"
-        ? details.cached_tokens
-        : 0;
-    if (typeof promptTokens === "number") {
-      payload._meta = {
-        turnTokenTotals: [
-          {
-            model: modelId,
-            inputTokens: promptTokens,
-            cachedTokens,
-            outputTokens:
-              typeof completionTokens === "number" ? completionTokens : 0,
-          },
-        ],
-      };
-    }
     try {
       progress.report(
         new vscode.LanguageModelDataPart(
-          new TextEncoder().encode(JSON.stringify(payload)),
+          new TextEncoder().encode(JSON.stringify(usage)),
           "usage",
         ),
       );
