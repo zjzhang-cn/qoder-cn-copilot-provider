@@ -285,6 +285,7 @@ export function activate(context: vscode.ExtensionContext): void {
       `Starting PAT import (${gateway.instance ?? "public"}).`,
     );
 
+    const controller = new AbortController();
     try {
       const { authState, modelCount } = await vscode.window.withProgress(
         {
@@ -293,7 +294,6 @@ export function activate(context: vscode.ExtensionContext): void {
           cancellable: true,
         },
         async (_progress, token) => {
-          const controller = new AbortController();
           const onCancel = token.onCancellationRequested(() =>
             controller.abort(),
           );
@@ -368,7 +368,14 @@ export function activate(context: vscode.ExtensionContext): void {
             ),
       );
     } catch (error) {
-      if (error instanceof vscode.CancellationError) return;
+      // A cancel during the in-flight exchange/userinfo surfaces as an
+      // AbortError, not a CancellationError; treat both as a silent cancel.
+      if (
+        error instanceof vscode.CancellationError ||
+        controller.signal.aborted
+      ) {
+        return;
+      }
       logger.error("PAT import failed", error);
       void vscode.window.showErrorMessage(
         t("Qoder Direct: PAT import failed: {0}", errorMessage(error)),

@@ -78,6 +78,7 @@ describe("activate", () => {
     state.quickPickQueue.length = 0;
     state.warningQueue.length = 0;
     state.fetchCalls.length = 0;
+    state.cancelProgress = false;
     state.messages.info.length = 0;
     state.messages.error.length = 0;
     state.messages.warning.length = 0;
@@ -157,6 +158,7 @@ describe("importPat", () => {
     state.quickPickQueue.length = 0;
     state.warningQueue.length = 0;
     state.fetchCalls.length = 0;
+    state.cancelProgress = false;
     state.messages.info.length = 0;
     state.messages.error.length = 0;
     state.messages.warning.length = 0;
@@ -237,6 +239,30 @@ describe("importPat", () => {
 
     expect(await context.secrets.get("qoder-direct.auth.v1")).toBeUndefined();
     expect(state.messages.error.join("\n")).toContain("PAT import failed");
+  });
+
+  it("stays silent when cancelled during the in-flight exchange", async () => {
+    // The exchange never resolves until aborted, mimicking a slow request
+    // that the user cancels from the progress notification.
+    vi.stubGlobal("fetch", async (_input: unknown, init?: RequestInit) => {
+      state.fetchCalls.push({ url: String(_input) });
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(new DOMException("This operation was aborted", "AbortError")),
+        );
+      });
+    });
+    const context = createContext();
+    activate(context as unknown as vscode.ExtensionContext);
+    state.quickPickQueue.push({ value: "public" });
+    state.inputQueue.push("pt-secret");
+    state.cancelProgress = true;
+
+    await state.commands.get("qoderDirect.importPat")?.();
+
+    expect(await context.secrets.get("qoder-direct.auth.v1")).toBeUndefined();
+    expect(state.messages.error).toHaveLength(0);
+    expect(state.messages.info).toHaveLength(0);
   });
 
   it("asks before replacing an existing sign-in and honors cancel", async () => {

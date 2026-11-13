@@ -85,6 +85,8 @@ export const state = {
   quickPickQueue: [] as Array<{ value: string } | undefined>,
   warningQueue: [] as Array<string | undefined>,
   fetchCalls: [] as Array<{ url: string; init?: RequestInit }>,
+  /** When set, withProgress fires cancellation right after the task starts. */
+  cancelProgress: false,
   messages: {
     info: [] as string[],
     error: [] as string[],
@@ -137,13 +139,20 @@ export const window = {
       },
     ) => Promise<T>,
   ): Promise<T> {
-    return task(
-      { report: () => undefined },
-      {
-        isCancellationRequested: false,
-        onCancellationRequested: () => ({ dispose: () => undefined }),
+    const listeners = new Set<() => void>();
+    const token = {
+      isCancellationRequested: false,
+      onCancellationRequested(listener: () => void) {
+        listeners.add(listener);
+        return { dispose: () => listeners.delete(listener) };
       },
-    );
+    };
+    const result = task({ report: () => undefined }, token);
+    if (state.cancelProgress) {
+      token.isCancellationRequested = true;
+      for (const listener of [...listeners]) listener();
+    }
+    return result;
   },
 };
 
