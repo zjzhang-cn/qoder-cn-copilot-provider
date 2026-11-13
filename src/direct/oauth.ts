@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { HubError } from "../backend";
+import { redactTokens } from "../core/util";
 import {
   CN_CLIENT_ID,
   CN_LOGIN_USER_AGENT,
@@ -343,5 +344,5 @@ async function authError(response: Response, fallback: string): Promise<HubError
   } catch {
     // Keep the fallback.
   }
-  return new HubError(detail, response.status);
+  return new HubError(redactTokens(detail), response.status);
 }

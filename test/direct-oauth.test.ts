@@ -239,4 +239,20 @@ describe("Qoder job tokens (PAT)", () => {
     expect(isSessionDeadMessage("queued: 10605")).toBe(false);
     expect(isSessionDeadMessage("")).toBe(false);
   });
+
+  it("redacts an echoed PAT from upstream error text", async () => {
+    await expect(
+      exchangeJobToken(endpointsFor(), "pt-secret", {
+        fetchImpl: async () =>
+          jsonResponse(
+            { message: "invalid personal_token: pt-abc123XYZ_-def" },
+            401,
+          ),
+      }),
+    ).rejects.toMatchObject({
+      name: "HubError",
+      status: 401,
+      message: "invalid personal_token: pt-***",
+    });
+  });
 });
