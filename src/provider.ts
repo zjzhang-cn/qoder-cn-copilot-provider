@@ -185,7 +185,7 @@ export class QoderProvider
           },
           onUsage: (usage) => {
             this.log.info(`Usage: ${JSON.stringify(usage)}`);
-            this.reportUsage(progress, usage);
+            this.reportUsage(progress, usage, model.id);
           },
         },
         controller.signal,
@@ -220,10 +220,15 @@ export class QoderProvider
    * `LanguageModelDataPart` with mime type "usage" carrying the OpenAI-style
    * usage JSON (prompt_tokens / completion_tokens / ...). This is the same
    * stable-API channel the built-in providers use; without it the UI shows 0.
+   *
+   * The cached-input line is rendered from `modelTotals[].cachedTokens`, which
+   * VS Code derives from a `_meta.turnTokenTotals` array. The plain usage
+   * fields alone do not surface it, so we attach that metadata additively.
    */
   private reportUsage(
     progress: vscode.Progress<vscode.LanguageModelResponsePart>,
     usage: unknown,
+    modelId: string,
   ): void {
     if (!isRecord(usage)) return;
     const promptTokens = usage.prompt_tokens;
@@ -234,10 +239,31 @@ export class QoderProvider
     ) {
       return;
     }
+    const payload: Record<string, unknown> = { ...usage };
+    const details = isRecord(usage.prompt_tokens_details)
+      ? usage.prompt_tokens_details
+      : undefined;
+    const cachedTokens =
+      details && typeof details.cached_tokens === "number"
+        ? details.cached_tokens
+        : 0;
+    if (typeof promptTokens === "number") {
+      payload._meta = {
+        turnTokenTotals: [
+          {
+            model: modelId,
+            inputTokens: promptTokens,
+            cachedTokens,
+            outputTokens:
+              typeof completionTokens === "number" ? completionTokens : 0,
+          },
+        ],
+      };
+    }
     try {
       progress.report(
         new vscode.LanguageModelDataPart(
-          new TextEncoder().encode(JSON.stringify(usage)),
+          new TextEncoder().encode(JSON.stringify(payload)),
           "usage",
         ),
       );

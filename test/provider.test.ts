@@ -275,6 +275,17 @@ describe("QoderProvider (direct)", () => {
       completion_tokens: 78,
       total_tokens: 45125,
     });
+    // Cached-input line is rendered from _meta.turnTokenTotals[].cachedTokens.
+    expect(decoded._meta).toMatchObject({
+      turnTokenTotals: [
+        {
+          model: "qmodel_38max",
+          inputTokens: 45047,
+          cachedTokens: 43648,
+          outputTokens: 78,
+        },
+      ],
+    });
     provider.dispose();
   });
 
