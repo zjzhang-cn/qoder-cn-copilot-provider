@@ -1,6 +1,6 @@
 # Qoder CN Provider for Copilot
 
-在 VS Code 原生聊天模型选择器中直连 Qoder CN。扩展使用 Qoder 设备 OAuth 登录，直接访问 Qoder 上游，并把可用模型注册为原生语言模型提供方。
+在 VS Code 原生聊天模型选择器中直连 Qoder CN。扩展支持 Qoder 设备 OAuth 登录和 PAT（个人访问令牌）导入，直接访问 Qoder 上游，并把可用模型注册为原生语言模型提供方。
 
 ## 环境要求
 
@@ -17,11 +17,23 @@
 
 访问令牌和刷新令牌只保存在 VS Code `SecretStorage`。访问令牌到期前会自动刷新；遇到 `401` 时会强制刷新一次并重试。
 
+### PAT 登录（个人访问令牌）
+
+组织 SSO 拦截设备授权、或不想走浏览器时，可以用 PAT 登录：
+
+1. 在 Qoder 网页版「设置 → Personal Access Token」创建一个 `pt-` 令牌。
+2. 运行 **Qoder Direct: 导入 PAT (Import PAT)**，选择公共 CN 或 VPC 实例，粘贴令牌。
+3. 扩展用 PAT 交换 `jt-` 访问令牌（24 小时）和 `jrt-` 刷新令牌（48 小时），并拉取账号身份；身份获取失败时导入整体失败，不会保存半成品凭证。
+4. 已有登录时会先弹确认框；确认后 PAT 会话替换当前会话。
+
+PAT 与令牌一起保存在 `SecretStorage`，作为最后兜底：`jrt-` 刷新失败（含网络错误）时自动用 PAT 重新交换；PAT 本身失效或被吊销时提示重新导入。PAT 不会出现在日志中。
+
 ## 命令
 
 | 命令 | 用途 |
 | --- | --- |
 | **Qoder Direct: 登录 (Sign In)** | 通过 OAuth 设备授权登录公共 CN 或 VPC 实例，并创建模型提供方分组。 |
+| **Qoder Direct: 导入 PAT (Import PAT)** | 用 `pt-` 个人访问令牌登录公共 CN 或 VPC 实例，并创建模型提供方分组。 |
 | **Qoder Direct: 退出登录 (Sign Out)** | 清除已保存的 Qoder 令牌和模型缓存。 |
 | **Qoder Direct: 刷新模型 (Refresh Models)** | 刷新模型列表和缓存。 |
 | **Qoder Direct: 创建模型提供方分组 (Create Provider Group)** | 使用当前登录重新创建分组。 |
@@ -57,7 +69,8 @@ code --install-extension qoder-cn-copilot-provider-0.1.0.vsix
 - **找不到命令**：命令名称已本地化。可以搜索 `Qoder Direct` 或 `登录`；英文环境下显示为 `Qoder Direct: Sign In (登录)`。
 - **浏览器跳转 `qoder-work-cn://` 失败**：在页面中完成账号授权即可，扩展仍可能通过轮询获取令牌。
 - **VPC 登录失败**：扩展宿主和浏览器都必须能访问该实例的 website / openapi / gateway 主机。运行 **Qoder Direct: 显示日志 (Show Logs)** 查看派生出的主机地址。
-- **组织 SSO 阻止设备授权**：需要联系组织管理员允许设备授权后再登录。
+- **组织 SSO 阻止设备授权**：改用 **Qoder Direct: 导入 PAT (Import PAT)**，在网页版「设置 → Personal Access Token」签发令牌后导入；或联系组织管理员允许设备授权。
+- **PAT 导入失败**：确认令牌以 `pt-` 开头且未过期/未被吊销；VPC 实例需能访问对应 openapi 主机。提示“PAT 已失效”时重新创建并导入令牌。
 - **删除分组后模型仍存在**：删除分组不会退出登录；运行 **Qoder Direct: 退出登录 (Sign Out)** 或重新加载窗口。模型只通过 `Qoder Direct` 分组提供。
 
 ## 许可证
