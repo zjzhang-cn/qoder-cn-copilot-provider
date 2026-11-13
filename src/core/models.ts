@@ -126,9 +126,6 @@ export function toProviderModels(
           : typeof model.capabilities?.tool_calls === "boolean"
             ? model.capabilities.tool_calls
             : true;
-    // Images stay disabled in v1. They can be opted into per model after the
-    // hub's image support has been verified.
-    const imageInput = override?.imageInput === true;
     const supportsReasoning =
       typeof model.supports_reasoning === "boolean"
         ? model.supports_reasoning
@@ -137,6 +134,9 @@ export function toProviderModels(
       typeof model.supports_vision === "boolean"
         ? model.supports_vision
         : model.capabilities?.vision === true;
+    // Vision models (catalog is_vl) accept inline images; a per-model
+    // override can force it on or off when the catalog flag is wrong.
+    const imageInput = override?.imageInput ?? supportsVision;
 
     const contextChoice = buildContextChoice(
       windows,

@@ -73,6 +73,8 @@ export interface DirectQoderClientOptions {
 }
 
 const CHAT_TIMEOUT_MS = 600_000;
+/** Encoded-body ceiling below Aliyun's 30MB SLB POST hard limit. */
+const MAX_CHAT_BODY_BYTES = 29 * 1024 * 1024;
 
 export class DirectQoderClient implements BackendClient {
   private readonly beginAt = new Map<string, number>();
@@ -194,6 +196,16 @@ export class DirectQoderClient implements BackendClient {
     const endpoints = endpointsFor(auth.instance);
     const body = this.buildBody(auth, request);
     const encoded = qoderEncode(JSON.stringify(body));
+    // Aliyun's SLB hard-caps POST bodies at 30MB and RSTs above it; reject
+    // locally with an actionable error instead of a broken pipe.
+    if (Buffer.byteLength(encoded, "utf8") > MAX_CHAT_BODY_BYTES) {
+      const err = new HubError(
+        "Qoder chat request is too large. Reduce the number or size of images.",
+        413,
+      );
+      err.code = "request-too-large";
+      throw err;
+    }
     const url = `${endpoints.gateway}${CHAT_PATH}`;
     const session = this.createSession(auth);
     const headers = session.headers(encoded, url, {
@@ -215,11 +227,13 @@ export class DirectQoderClient implements BackendClient {
       const text = await readText(response.body);
       this.learnMaxOutputLimit(request.model, text);
       const queueDelay = parseQueueRetryAfter(text, response.status);
-      throw new HubError(
+      const err = new HubError(
         text.trim() || `Qoder chat failed with HTTP ${response.status}.`,
         queueDelay === undefined ? response.status : 429,
         queueDelay,
       );
+      if (isImageConversionTimeout(text)) err.code = "image-conversion-timeout";
+      throw err;
     }
     await this.consume(response.body, handlers, markEmitted, request.model);
   }
@@ -326,7 +340,11 @@ export class DirectQoderClient implements BackendClient {
       const errorMessage = streamErrorMessage(chunk);
       if (errorMessage) {
         this.learnMaxOutputLimit(modelKey, errorMessage);
-        throw new HubError(errorMessage);
+        const err = new HubError(errorMessage);
+        if (isImageConversionTimeout(errorMessage)) {
+          err.code = "image-conversion-timeout";
+        }
+        throw err;
       }
 
       const text = textDelta(chunk);
@@ -378,6 +396,11 @@ function isUnauthorized(error: unknown): boolean {
     error instanceof HubError &&
     (error.status === 401 || isSessionDeadMessage(error.message))
   );
+}
+
+/** Upstream's provider-side 30s image conversion stage timing out. */
+function isImageConversionTimeout(text: string): boolean {
+  return /image[ _-]+conversion[ _-]+(?:timeout|timed[ _-]+out)/i.test(text);
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {

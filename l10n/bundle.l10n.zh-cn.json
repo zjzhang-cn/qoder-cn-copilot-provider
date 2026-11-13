@@ -35,6 +35,8 @@
   "Qoder job token refresh failed.": "Qoder job 令牌刷新失败。",
   "Qoder token refresh failed.": "Qoder 令牌刷新失败。",
   "Device authorization failed.": "设备授权失败。",
+  "Qoder chat request is too large. Reduce the number or size of images.": "Qoder 聊天请求过大，请减少图片数量或尺寸。",
+  "Qoder image conversion timed out. Try smaller or fewer images.": "Qoder 图片转换超时，请尝试更小或更少的图片。",
   "Qoder Direct: signed out.": "Qoder Direct：已退出登录。",
   "Qoder Direct: sign in first.": "Qoder Direct：请先登录。",
   "Qoder Direct: provider group is ready. Use Manage Language Models to edit or delete it.": "Qoder Direct：模型提供方分组已就绪。可在“管理语言模型”中编辑或删除。",

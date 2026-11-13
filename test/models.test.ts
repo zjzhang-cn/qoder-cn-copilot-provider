@@ -57,7 +57,32 @@ describe("toProviderModels", () => {
     expect(entry?.maxInputTokens).toBe(180_000);
     expect(entry?.maxOutputTokens).toBe(32_000);
     expect(entry?.capabilities.toolCalling).toBe(false);
-    expect(entry?.capabilities.imageInput).toBe(false);
+    // Vision capability now drives image input (catalog is_vl).
+    expect(entry?.capabilities.imageInput).toBe(true);
+  });
+
+  it("gates image input on vision and honors the override", () => {
+    const [vision] = toProviderModels([
+      model({ capabilities: { vision: true } }),
+    ]);
+    expect(vision?.capabilities.imageInput).toBe(true);
+
+    const [noVision] = toProviderModels([
+      model({ capabilities: { vision: false } }),
+    ]);
+    expect(noVision?.capabilities.imageInput).toBe(false);
+
+    const [forcedOff] = toProviderModels(
+      [model({ capabilities: { vision: true } })],
+      { overrides: { "qwen3.8-max": { imageInput: false } } },
+    );
+    expect(forcedOff?.capabilities.imageInput).toBe(false);
+
+    const [forcedOn] = toProviderModels(
+      [model({ capabilities: { vision: false } })],
+      { overrides: { "qwen3.8-max": { imageInput: true } } },
+    );
+    expect(forcedOn?.capabilities.imageInput).toBe(true);
   });
 
   it("falls back to 128k input and 16k output", () => {

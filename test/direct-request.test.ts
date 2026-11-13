@@ -150,3 +150,69 @@ describe("buildDirectChatRequest", () => {
     expect(conversationIdFor("workspace", "system", "other")).not.toBe(first);
   });
 });
+
+describe("buildDirectChatRequest images", () => {
+  const IMAGE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+  const userWithImage: OpenAIMessage = {
+    role: "user",
+    content: [
+      { type: "text", text: "what color is this?" },
+      { type: "image_url", image_url: { url: IMAGE } },
+    ],
+  };
+
+  function userMessages(body: Record<string, unknown>) {
+    return (body.messages as Array<Record<string, unknown>>).filter(
+      (message) => message.role === "user",
+    );
+  }
+
+  it("keeps structured image_url parts for vision models", () => {
+    const body = build("qmodel_38max", [userWithImage], {
+      supportsVision: true,
+    });
+    const [user] = userMessages(body);
+    expect(Array.isArray(user?.content)).toBe(true);
+    expect(user?.content).toEqual([
+      { type: "text", text: "what color is this?" },
+      { type: "image_url", image_url: { url: IMAGE } },
+    ]);
+    expect((body.model_config as Record<string, unknown>).is_vl).toBe(true);
+  });
+
+  it("leaves the ignored top-level image fields null", () => {
+    const body = build("qmodel_38max", [userWithImage]);
+    expect(body.image_urls).toBeNull();
+    expect(
+      (body.chat_context as Record<string, unknown>).imageUrls,
+    ).toBeNull();
+  });
+
+  it("replaces images with a text note for non-vision models", () => {
+    const body = build("mmodel", [userWithImage], { supportsVision: false });
+    const [user] = userMessages(body);
+    expect(typeof user?.content).toBe("string");
+    expect(user?.content).toContain("what color is this?");
+    expect(user?.content).toContain("[图片已省略：当前模型不支持视觉]");
+    expect(JSON.stringify(userMessages(body))).not.toContain("image_url");
+    expect((body.model_config as Record<string, unknown>).is_vl).toBe(false);
+  });
+
+  it("keeps image-free messages as plain string content", () => {
+    const body = build("qmodel_38max", [
+      { role: "user", content: "just text" },
+    ]);
+    const [user] = userMessages(body);
+    expect(user?.content).toBe("just text");
+  });
+
+  it("handles an image-only user message", () => {
+    const body = build("qmodel_38max", [
+      { role: "user", content: [{ type: "image_url", image_url: { url: IMAGE } }] },
+    ]);
+    const [user] = userMessages(body);
+    expect(user?.content).toEqual([
+      { type: "image_url", image_url: { url: IMAGE } },
+    ]);
+  });
+});

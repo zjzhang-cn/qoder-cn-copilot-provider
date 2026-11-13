@@ -408,4 +408,42 @@ describe("DirectQoderClient", () => {
     expect(requests).toBe(2);
     expect(texts).toEqual(["ok"]);
   });
+
+  it("rejects an oversized body locally before any network call", async () => {
+    let requests = 0;
+    const client = new DirectQoderClient({
+      authManager: authManager(),
+      transport: async () => {
+        requests += 1;
+        return { status: 200, body: (async function* () {})() };
+      },
+    });
+    // ~22MB of text base64-inflates to ~29.3MB, past the encoded-body ceiling.
+    const huge = "x".repeat(22 * 1024 * 1024);
+    await expect(
+      client.streamChat(
+        { model: "qmodel_38max", messages: [{ role: "user", content: huge }] },
+        { onText: () => undefined, onToolCall: () => undefined },
+      ),
+    ).rejects.toMatchObject({ name: "HubError", status: 413, code: "request-too-large" });
+    expect(requests).toBe(0);
+  }, 30_000);
+
+  it("codes an upstream image conversion timeout", async () => {
+    const client = new DirectQoderClient({
+      authManager: authManager(),
+      transport: async () => ({
+        status: 504,
+        body: (async function* () {
+          yield '{"code":"provider_error","message":"Image conversion timeout"}';
+        })(),
+      }),
+    });
+    await expect(
+      client.streamChat(
+        { model: "qmodel_38max", messages: [{ role: "user", content: "hi" }] },
+        { onText: () => undefined, onToolCall: () => undefined },
+      ),
+    ).rejects.toMatchObject({ code: "image-conversion-timeout" });
+  });
 });

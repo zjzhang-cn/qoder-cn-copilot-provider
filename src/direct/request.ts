@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { OpenAIMessage, OpenAITool } from "../core/messages";
+import type { OpenAIContentPart, OpenAIMessage, OpenAITool } from "../core/messages";
 import { isRecord } from "../core/util";
 import baseprompt from "../../assets/baseprompt.json";
 import { COSY_VERSION, DEFAULT_MAX_OUTPUT_TOKENS, DEFAULT_USER_TYPE } from "./constants";
@@ -39,6 +39,7 @@ export function buildDirectChatRequest(
     openAIMessages,
     toolNames,
     structured,
+    input.supportsVision === true,
   );
 
   const body = structuredClone(baseprompt) as Record<string, unknown>;
@@ -98,9 +99,12 @@ export function buildDirectChatRequest(
   extra.originalContent = originalContent;
   extra.modelConfig = { ...modelConfig };
   chatContext.extra = extra;
-  chatContext.imageUrls = [];
+  // Upstream reads images ONLY from structured image_url parts inside
+  // messages[].content; the top-level fields are ignored and would triple
+  // the body size. Keep them null (as in baseprompt.json).
+  chatContext.imageUrls = null;
   body.chat_context = chatContext;
-  body.image_urls = [];
+  body.image_urls = null;
 
   const parameters = isRecord(body.parameters) ? body.parameters : {};
   parameters.max_tokens =
@@ -166,6 +170,7 @@ function flattenMessages(
   messages: readonly OpenAIMessage[],
   toolNames: ReadonlyMap<string, string>,
   structured: boolean,
+  supportsVision: boolean,
 ): { systemText?: string; flat: Array<Record<string, unknown>>; prompt: string } {
   let systemText: string | undefined;
   const flat: Array<Record<string, unknown>> = [];
@@ -218,6 +223,28 @@ function flattenMessages(
 
     const text = contentText(message.content);
     if (message.role === "user" && !prompt) prompt = text;
+
+    // Images survive only in user messages, as structured image_url parts
+    // alongside text (the upstream wire format). Non-vision models get a
+    // text placeholder instead, so history with images never blocks a turn.
+    const images =
+      message.role === "user" ? contentImages(message.content) : [];
+    if (images.length > 0) {
+      if (supportsVision) {
+        const parts: OpenAIContentPart[] = [];
+        if (text) parts.push({ type: "text", text });
+        parts.push(...images);
+        flat.push({ role: message.role, content: parts });
+      } else {
+        const note = "[图片已省略：当前模型不支持视觉]";
+        flat.push({
+          role: message.role,
+          content: text ? `${text}\n${note}` : note,
+        });
+      }
+      continue;
+    }
+
     flat.push({ role: message.role, content: text });
   }
 
@@ -279,4 +306,25 @@ function contentText(content: string | unknown): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+/** Extract inline image_url parts (data URLs) from a message content array. */
+function contentImages(content: string | unknown): OpenAIContentPart[] {
+  if (!Array.isArray(content)) return [];
+  const images: OpenAIContentPart[] = [];
+  for (const part of content) {
+    if (
+      isRecord(part) &&
+      part.type === "image_url" &&
+      isRecord(part.image_url) &&
+      typeof part.image_url.url === "string" &&
+      part.image_url.url.startsWith("data:image/")
+    ) {
+      images.push({
+        type: "image_url",
+        image_url: { url: part.image_url.url },
+      });
+    }
+  }
+  return images;
 }

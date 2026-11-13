@@ -39,6 +39,10 @@ export function localizedAuthMessage(error: HubError): string {
       return t("Qoder token refresh failed.");
     case "device-auth-failed":
       return t("Device authorization failed.");
+    case "request-too-large":
+      return t("Qoder chat request is too large. Reduce the number or size of images.");
+    case "image-conversion-timeout":
+      return t("Qoder image conversion timed out. Try smaller or fewer images.");
     default:
       return error.message;
   }
