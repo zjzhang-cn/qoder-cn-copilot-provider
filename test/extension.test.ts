@@ -103,6 +103,8 @@ describe("activate", () => {
       "qoderDirect.createProviderGroup",
       "qoderDirect.deleteProviderGroup",
       "qoderDirect.showLogs",
+      "qoderDirect.showQuota",
+      "qoderDirect.refreshQuota",
     ]);
     expect(context.subscriptions.length).toBeGreaterThan(0);
   });
@@ -292,7 +294,13 @@ describe("importPat", () => {
     await state.commands.get("qoderDirect.importPat")?.();
 
     expect(state.messages.warning.join("\n")).toContain("uid-old-");
-    expect(state.fetchCalls).toHaveLength(0);
+    // No PAT exchange/userinfo calls (activation may refresh quota separately).
+    expect(
+      state.fetchCalls.filter(
+        (call) =>
+          call.url.includes("/jobToken/") || call.url.includes("/userinfo"),
+      ),
+    ).toHaveLength(0);
     const stored = JSON.parse(
       (await context.secrets.get("qoder-direct.auth.v1")) ?? "{}",
     ) as Record<string, unknown>;

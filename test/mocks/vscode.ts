@@ -128,6 +128,26 @@ export const window = {
   createOutputChannel(): typeof outputChannel {
     return outputChannel;
   },
+  createStatusBarItem(): StatusBarItemLike {
+    const item: StatusBarItemLike = {
+      text: "",
+      tooltip: undefined,
+      command: undefined,
+      shown: false,
+      disposed: false,
+      show() {
+        item.shown = true;
+      },
+      hide() {
+        item.shown = false;
+      },
+      dispose() {
+        item.disposed = true;
+      },
+    };
+    statusBarItems.push(item);
+    return item;
+  },
   async showInputBox(): Promise<string | undefined> {
     return state.inputQueue.shift();
   },
@@ -180,6 +200,24 @@ export const window = {
 export const ProgressLocation = {
   Notification: 15,
 } as const;
+
+export const StatusBarAlignment = {
+  Left: 1,
+  Right: 2,
+} as const;
+
+export interface StatusBarItemLike {
+  text: string;
+  tooltip: string | undefined;
+  command: string | undefined;
+  shown: boolean;
+  disposed: boolean;
+  show(): void;
+  hide(): void;
+  dispose(): void;
+}
+
+export const statusBarItems: StatusBarItemLike[] = [];
 
 export const Uri = {
   parse(value: string): { toString(): string } {

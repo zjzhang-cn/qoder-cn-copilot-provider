@@ -84,6 +84,16 @@
         "command": "qoderDirect.showLogs",
         "title": "%command.showLogs.title%",
         "category": "Qoder Direct"
+      },
+      {
+        "command": "qoderDirect.showQuota",
+        "title": "%command.showQuota.title%",
+        "category": "Qoder Direct"
+      },
+      {
+        "command": "qoderDirect.refreshQuota",
+        "title": "%command.refreshQuota.title%",
+        "category": "Qoder Direct"
       }
     ]
   },

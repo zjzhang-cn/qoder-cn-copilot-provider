@@ -8,5 +8,7 @@
   "command.refreshModels.title": "刷新模型 (Refresh Models)",
   "command.createProviderGroup.title": "创建模型提供方分组 (Create Provider Group)",
   "command.deleteProviderGroup.title": "删除模型提供方分组 (Delete Provider Group)",
-  "command.showLogs.title": "显示日志 (Show Logs)"
+  "command.showLogs.title": "显示日志 (Show Logs)",
+  "command.showQuota.title": "显示额度 (Show Quota)",
+  "command.refreshQuota.title": "刷新额度 (Refresh Quota)"
 }

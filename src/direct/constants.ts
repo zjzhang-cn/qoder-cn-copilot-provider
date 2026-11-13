@@ -19,6 +19,7 @@ export const DEVICE_REFRESH_PATH = "/api/v1/deviceToken/refresh";
 export const JOB_EXCHANGE_PATH = "/api/v1/jobToken/exchange";
 export const JOB_REFRESH_PATH = "/api/v1/jobToken/refresh";
 export const USERINFO_PATH = "/api/v1/userinfo";
+export const QUOTA_PATH = "/api/v2/quota/usage";
 
 export const COSY_VERSION = "1.1.75";
 export const COSY_CLIENT_TYPE = "5";

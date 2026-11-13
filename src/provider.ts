@@ -47,6 +47,7 @@ export class QoderProvider
     private readonly client: BackendClient,
     private readonly log: Logger,
     private readonly profile: BackendProfile,
+    private readonly onChatFinished?: () => void,
   ) {}
 
   async provideLanguageModelChatInformation(
@@ -198,6 +199,7 @@ export class QoderProvider
       this.log.info(
         `Chat finished: model=${model.id} elapsed=${Date.now() - started}ms`,
       );
+      this.onChatFinished?.();
     }
   }
 

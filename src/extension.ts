@@ -24,6 +24,7 @@ import { t } from "./l10n";
 import { Logger } from "./logger";
 import { DIRECT_PROFILE } from "./profiles";
 import { QoderProvider } from "./provider";
+import { QuotaStatusBar } from "./quotaStatusBar";
 
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel("Qoder Direct");
@@ -58,12 +59,18 @@ export function activate(context: vscode.ExtensionContext): void {
     getExcludedModels: () => [],
     getModelOverrides: () => ({}),
   });
+  const quotaBar = new QuotaStatusBar({ auth, logger });
   const provider = new QoderProvider(
     store,
     client,
     logger,
     DIRECT_PROFILE,
+    () => {
+      void quotaBar.refresh();
+    },
   );
+  quotaBar.show();
+  void quotaBar.refresh();
 
   async function addProviderGroup(authState: DirectAuth): Promise<boolean> {
     try {
@@ -471,17 +478,25 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand("qoderDirect.showLogs", () => {
       logger.show();
     }),
+    vscode.commands.registerCommand("qoderDirect.showQuota", async () => {
+      await quotaBar.showDetails();
+    }),
+    vscode.commands.registerCommand("qoderDirect.refreshQuota", async () => {
+      await quotaBar.refresh();
+    }),
   ];
 
   const secretListener = secrets.onDidChange((event) => {
     if (event.key !== DIRECT_PROFILE.secretKey) return;
     store.clear();
     provider.refresh();
+    void quotaBar.refresh();
   });
 
   context.subscriptions.push(
     output,
     provider,
+    quotaBar,
     vscode.lm.registerLanguageModelChatProvider(
       DIRECT_PROFILE.vendor,
       provider,
