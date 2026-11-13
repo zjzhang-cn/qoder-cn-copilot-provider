@@ -167,3 +167,159 @@ describe("DirectAuthManager", () => {
     expect(await manager.getPending()).toBeUndefined();
   });
 });
+
+describe("DirectAuthManager PAT sessions", () => {
+  function patAuth(overrides: Partial<DirectAuth> = {}): DirectAuth {
+    return auth({
+      accessToken: "jt-old",
+      refreshToken: "jrt-old",
+      personalToken: "pt-secret",
+      source: "pat",
+      ...overrides,
+    });
+  }
+
+  function managerWith(
+    fetchImpl: typeof fetch,
+    dir: string,
+    secrets = new FakeSecrets(),
+  ): DirectAuthManager {
+    return new DirectAuthManager({
+      secrets,
+      authKey: AUTH_KEY,
+      pendingKey: PENDING_KEY,
+      lockDir: dir,
+      fetchImpl,
+      now: () => 1000,
+    });
+  }
+
+  it("routes jrt- refresh tokens to the jobToken endpoint", async () => {
+    const dir = await tempDir();
+    const urls: string[] = [];
+    const manager = managerWith(async (input) => {
+      urls.push(String(input));
+      return jsonResponse({
+        token: "jt-new",
+        refresh_token: "jrt-new",
+        expires_in: 3_600_000,
+      });
+    }, dir);
+    const result = await manager.ensureFresh(patAuth());
+    expect(urls).toEqual([
+      "https://acme-openapi.vpc.qoder.com.cn/api/v1/jobToken/refresh",
+    ]);
+    expect(result.accessToken).toBe("jt-new");
+    expect(result.personalToken).toBe("pt-secret");
+    expect(result.source).toBe("pat");
+  });
+
+  it("falls back to PAT re-exchange when job refresh fails", async () => {
+    const dir = await tempDir();
+    const urls: string[] = [];
+    const manager = managerWith(async (input) => {
+      urls.push(String(input));
+      if (urls.length === 1) {
+        return jsonResponse({ message: "jrt expired" }, 401);
+      }
+      return jsonResponse({
+        token: "jt-fresh",
+        refresh_token: "jrt-fresh",
+        expires_in: 3_600_000,
+      });
+    }, dir);
+    const result = await manager.ensureFresh(patAuth());
+    expect(urls).toEqual([
+      "https://acme-openapi.vpc.qoder.com.cn/api/v1/jobToken/refresh",
+      "https://acme-openapi.vpc.qoder.com.cn/api/v1/jobToken/exchange",
+    ]);
+    expect(result.accessToken).toBe("jt-fresh");
+    expect(result.expiresAt).toBe(3_601_000);
+  });
+
+  it("falls back to PAT re-exchange on network errors too", async () => {
+    const dir = await tempDir();
+    let calls = 0;
+    const manager = managerWith(async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("socket hang up");
+      return jsonResponse({ token: "jt-fresh", expires_in: 1000 });
+    }, dir);
+    const result = await manager.ensureFresh(patAuth());
+    expect(calls).toBe(2);
+    expect(result.accessToken).toBe("jt-fresh");
+    // A missing job refresh_token must not erase the stored jrt-.
+    expect(result.refreshToken).toBe("jrt-old");
+  });
+
+  it("exchanges directly when the PAT record has no jrt-", async () => {
+    const dir = await tempDir();
+    const urls: string[] = [];
+    const manager = managerWith(async (input) => {
+      urls.push(String(input));
+      return jsonResponse({ token: "jt-fresh", expires_in: 1000 });
+    }, dir);
+    const result = await manager.ensureFresh(patAuth({ refreshToken: "" }));
+    expect(urls).toEqual([
+      "https://acme-openapi.vpc.qoder.com.cn/api/v1/jobToken/exchange",
+    ]);
+    expect(result.accessToken).toBe("jt-fresh");
+  });
+
+  it("maps a dead PAT to a 401 re-import error", async () => {
+    const dir = await tempDir();
+    const secrets = new FakeSecrets();
+    const manager = managerWith(
+      async () => jsonResponse({ message: "TOKEN_EXPIRE" }, 401),
+      dir,
+      secrets,
+    );
+    await manager.saveAuth(patAuth());
+    await expect(manager.ensureFresh(patAuth())).rejects.toMatchObject({
+      name: "HubError",
+      status: 401,
+      message: "Qoder PAT is invalid or revoked. Import a new PAT.",
+    });
+    // The stored credentials are left intact for the user to decide.
+    expect(await manager.getAuth()).toMatchObject({
+      personalToken: "pt-secret",
+      accessToken: "jt-old",
+    });
+  });
+
+  it("keeps device records on the device endpoint even with a PAT present", async () => {
+    const dir = await tempDir();
+    const urls: string[] = [];
+    const manager = managerWith(async (input) => {
+      urls.push(String(input));
+      return jsonResponse({
+        token: "dt-new",
+        refresh_token: "drt-new",
+        user_id: "uid",
+        expires_in: 1000,
+      });
+    }, dir);
+    const result = await manager.ensureFresh(
+      auth({ personalToken: "pt-secret", source: "pat" }),
+    );
+    expect(urls).toEqual([
+      "https://acme-openapi.vpc.qoder.com.cn/api/v1/deviceToken/refresh",
+    ]);
+    expect(result.accessToken).toBe("dt-new");
+  });
+
+  it("round-trips PAT fields and still accepts legacy records", async () => {
+    const dir = await tempDir();
+    const secrets = new FakeSecrets();
+    const manager = managerWith(async () => jsonResponse({}), dir, secrets);
+    await manager.saveAuth(patAuth());
+    expect(await manager.getAuth()).toMatchObject({
+      personalToken: "pt-secret",
+      source: "pat",
+    });
+    await manager.saveAuth(auth());
+    const legacy = await manager.getAuth();
+    expect(legacy).toMatchObject({ uid: "uid" });
+    expect(legacy?.personalToken).toBeUndefined();
+  });
+});
