@@ -32,6 +32,7 @@ import { qoderEncode } from "./encode";
 import { DirectLimiter } from "./limiter";
 import { learnMaxOutputLimit } from "./maxTokens";
 import { parseQueueRetryAfter } from "./queue";
+import { isSessionDeadMessage } from "./oauth";
 import {
   basepromptSystemText,
   buildDirectChatRequest,
@@ -368,7 +369,10 @@ export class DirectQoderClient implements BackendClient {
 }
 
 function isUnauthorized(error: unknown): boolean {
-  return error instanceof HubError && error.status === 401;
+  return (
+    error instanceof HubError &&
+    (error.status === 401 || isSessionDeadMessage(error.message))
+  );
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {

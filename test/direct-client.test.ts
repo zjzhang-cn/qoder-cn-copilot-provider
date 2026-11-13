@@ -361,4 +361,51 @@ describe("DirectQoderClient", () => {
       ),
     ).rejects.toMatchObject({ name: "HubError", status: 500 });
   });
+
+  it("refreshes once when the stream reports a session-dead marker", async () => {
+    let refreshed = 0;
+    let requests = 0;
+    const manager = {
+      getAuth: async () => AUTH,
+      ensureFresh: async () => AUTH,
+      forceRefresh: async () => {
+        refreshed += 1;
+        return AUTH;
+      },
+    };
+    const client = new DirectQoderClient({
+      authManager: manager,
+      transport: async () => {
+        requests += 1;
+        const chunks =
+          requests === 1
+            ? [
+                outer({
+                  error: { message: "TOKEN_EXPIRE: session expired" },
+                }),
+              ]
+            : [
+                outer({ choices: [{ delta: { content: "ok" } }] }),
+                "data: [DONE]\n\n",
+              ];
+        return {
+          status: 200,
+          body: (async function* () {
+            for (const chunk of chunks) yield chunk;
+          })(),
+        };
+      },
+    });
+    const texts: string[] = [];
+    await client.streamChat(
+      { model: "qmodel_38max", messages: [{ role: "user", content: "hi" }] },
+      {
+        onText: (text) => texts.push(text),
+        onToolCall: () => undefined,
+      },
+    );
+    expect(refreshed).toBe(1);
+    expect(requests).toBe(2);
+    expect(texts).toEqual(["ok"]);
+  });
 });
