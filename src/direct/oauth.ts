@@ -7,6 +7,9 @@ import {
   CN_USER_AGENT,
   DEVICE_POLL_PATH,
   DEVICE_REFRESH_PATH,
+  JOB_EXCHANGE_PATH,
+  JOB_REFRESH_PATH,
+  SESSION_DEAD_MARKERS,
   USERINFO_PATH,
 } from "./constants";
 import type { QoderEndpoints } from "./endpoints";
@@ -169,6 +172,93 @@ export async function refreshDeviceToken(
   return parseTokenPayload(await response.json(), deps.now ?? Date.now);
 }
 
+/** True when upstream error text carries a session-dead marker. */
+export function isSessionDeadMessage(message: string): boolean {
+  return SESSION_DEAD_MARKERS.some((marker) => message.includes(marker));
+}
+
+export interface JobTokenResult {
+  accessToken: string;
+  /** May be empty: the exchange response can omit refresh_token. */
+  refreshToken: string;
+  expiresAt: number;
+}
+
+/**
+ * Exchange a long-lived `pt-` personal access token for a `jt-` job token.
+ * Identity is NOT read here; callers fetch /userinfo with the new token.
+ */
+export async function exchangeJobToken(
+  endpoints: QoderEndpoints,
+  personalToken: string,
+  deps: OAuthDeps = {},
+): Promise<JobTokenResult> {
+  return postJobToken(
+    `${endpoints.openapi}${JOB_EXCHANGE_PATH}`,
+    { personal_token: personalToken },
+    "Qoder PAT exchange failed",
+    deps,
+  );
+}
+
+/** Refresh a `jrt-` job refresh token. */
+export async function refreshJobToken(
+  endpoints: QoderEndpoints,
+  refreshToken: string,
+  deps: OAuthDeps = {},
+): Promise<JobTokenResult> {
+  return postJobToken(
+    `${endpoints.openapi}${JOB_REFRESH_PATH}`,
+    { refresh_token: refreshToken },
+    "Qoder job token refresh failed",
+    deps,
+  );
+}
+
+async function postJobToken(
+  url: string,
+  payload: Record<string, string>,
+  errorFallback: string,
+  deps: OAuthDeps,
+): Promise<JobTokenResult> {
+  const response = await (deps.fetchImpl ?? fetch)(url, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": CN_USER_AGENT,
+    },
+    body: JSON.stringify(payload),
+    signal: requestSignal(deps, 30_000),
+  });
+  if (!response.ok) throw await authError(response, errorFallback);
+  return parseJobTokenPayload(
+    await response.json(),
+    (deps.now ?? Date.now)(),
+  );
+}
+
+function parseJobTokenPayload(
+  payload: unknown,
+  now: number,
+): JobTokenResult {
+  if (typeof payload !== "object" || payload === null) {
+    throw new HubError("Qoder returned an invalid token payload.");
+  }
+  const data = payload as TokenPayload;
+  const accessToken = firstString(data.token);
+  if (!accessToken) {
+    throw new HubError("Qoder token payload is incomplete.");
+  }
+  const refreshToken =
+    typeof data.refresh_token === "string" ? data.refresh_token : "";
+  const expiresIn = numberValue(data.expires_in);
+  // The hub treats jobToken expires_in as milliseconds; default to 24h.
+  const expiresAt =
+    expiresIn !== undefined ? now + expiresIn : now + 24 * 60 * 60 * 1000;
+  return { accessToken, refreshToken, expiresAt };
+}
+
 function parseTokenPayload(
   payload: unknown,
   now: () => number,
@@ -202,8 +292,8 @@ function parseExpiry(data: TokenPayload, now: number): number {
   return now + 30 * 24 * 60 * 60 * 1000;
 }
 
-function requestSignal(deps: OAuthDeps): AbortSignal {
-  const timeout = AbortSignal.timeout(15_000);
+function requestSignal(deps: OAuthDeps, timeoutMs = 15_000): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
   return deps.signal ? AbortSignal.any([deps.signal, timeout]) : timeout;
 }
 

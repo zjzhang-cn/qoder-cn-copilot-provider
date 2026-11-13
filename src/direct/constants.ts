@@ -28,6 +28,16 @@ export const LOGIN_VERSION = "v2";
 export const DEFAULT_USER_TYPE = "personal_professional_trial";
 export const DEFAULT_MAX_OUTPUT_TOKENS = 16_000;
 
+/**
+ * Upstream markers meaning the session is dead and re-authentication is
+ * required (same set as the qoder2api hub). Matched against error text.
+ */
+export const SESSION_DEAD_MARKERS = [
+  "TOKEN_EXPIRE",
+  "12153",
+  "Offline user session not found",
+] as const;
+
 /** Qoder's public COSY key (not a secret). */
 export const COSY_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
 MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc
