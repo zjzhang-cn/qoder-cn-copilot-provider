@@ -4,7 +4,7 @@
 
 - Standalone VS Code extension **Qoder CN Provider for Copilot** that exposes Qoder CN models as a native language-model chat provider.
 - Layout: `src/extension.ts` (activation/commands), `src/provider.ts` (VS Code provider), `src/direct/*` (Qoder OAuth/COSY/catalog/chat), `src/core/*` (VS Code-free model/message/SSE helpers), `assets/baseprompt.json` (MIT attribution in `NOTICE`), `test/*`.
-- `npm test` currently runs 25 files / 155 tests; keep this line updated.
+- `npm test` currently runs 25 files / 163 tests; keep this line updated.
 
 ## Design decisions
 
@@ -20,7 +20,7 @@
 - Models are only served through the provider group; groupless discovery returns `[]`. Deleting the group removes models; sign-out is separate.
 - One chat at a time + 300ms gap; `DirectLimiter` coordinates across VS Code windows via a lock file.
 - Fixed protocol version constants; log version-gate errors instead of forging a higher client version.
-- Images disabled; reasoning content dropped (stable `LanguageModelResponsePart` has no thinking part).
+- Images enabled for vision models: `imageInput` follows catalog `is_vl` (per-model override can force on/off). Inline images flow as OpenAI `image_url` parts in user-message `content` (the only field upstream reads); top-level `image_urls`/`chat_context.imageUrls` stay null. Non-vision models get a text placeholder instead of images. No transcode/resize; encoded body capped at 29MB (Aliyun SLB 30MB hard limit) with a local 413. Upstream "Image conversion timeout" is coded + localized (no dedicated retry yet). Remote-URL images unsupported. Reasoning content dropped (stable `LanguageModelResponsePart` has no thinking part).
 
 ## Commands (verified)
 
@@ -43,3 +43,4 @@
 - Default `package.nls.json` description is Chinese text shown to English-locale users.
 - `secrets.onDidChange` clears the model cache on every token save (bounded ~1 refetch/window/refresh); skip the clear when only tokens changed.
 - Live PAT smoke (jt- acceptance in COSY, server token lifetimes/rotation) remains unverified against a real account.
+- Images: optional PNG→JPEG transcode for bandwidth (needs a native codec dependency; skipped to keep the single-file bundle); dedicated one-shot retry for upstream "Image conversion timeout"; remote-URL image support; live vision smoke (upstream acceptance of WebP/GIF and non-vision behavior unverified).

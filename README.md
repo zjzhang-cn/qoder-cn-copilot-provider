@@ -48,7 +48,8 @@ PAT 与令牌一起保存在 `SecretStorage`，作为最后兜底：`jrt-` 刷�
 - 工具调用为原生调用；支持结构化历史和文本标记历史，并提供基础的工具调用文本恢复。
 - 同一时间只允许一个聊天请求，请求间隔 300ms；限流通过锁文件跨 VS Code 窗口生效。
 - 会话 ID 由工作区、系统提示和首条用户消息派生，保证多轮对话稳定。
-- 不展示推理内容；当前版本禁用图片输入。
+- 不展示推理内容。
+- **图片输入**：视觉模型（目录 `is_vl` 标记）支持在聊天中粘贴/拖拽图片，扩展把内联图片以 `image_url` 部件随消息发送；非视觉模型附图时自动降级为文字提示，不阻断对话。仅支持内联图片（不支持远程 URL）；单次请求编码后超过约 29MB 会本地拦截并提示减少图片。可用 per-model `imageInput` override 强制开/关。
 - 项目包含第三方 MIT 代码，归属信息见 `NOTICE`。
 
 ## 开发
@@ -59,7 +60,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension qoder-cn-copilot-provider-0.1.2.vsix
+code --install-extension qoder-cn-copilot-provider-0.2.0.vsix
 ```
 
 按 F5 启动扩展开发宿主。Provider API 是稳定接口，不需要 proposed-API 参数。单元测试全部使用 mock，不需要真实 Qoder 账号；真实联调需要 Qoder 账号和浏览器设备授权。
