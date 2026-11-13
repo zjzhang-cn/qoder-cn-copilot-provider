@@ -82,6 +82,9 @@ export const state = {
   executed: [] as Array<{ command: string; args: unknown[] }>,
   commandHandlers: new Map<string, (...args: unknown[]) => unknown>(),
   inputQueue: [] as Array<string | undefined>,
+  quickPickQueue: [] as Array<{ value: string } | undefined>,
+  warningQueue: [] as Array<string | undefined>,
+  fetchCalls: [] as Array<{ url: string; init?: RequestInit }>,
   messages: {
     info: [] as string[],
     error: [] as string[],
@@ -108,15 +111,55 @@ export const window = {
   async showInputBox(): Promise<string | undefined> {
     return state.inputQueue.shift();
   },
+  async showQuickPick(): Promise<{ value: string } | undefined> {
+    return state.quickPickQueue.shift();
+  },
   async showInformationMessage(message: string): Promise<void> {
     state.messages.info.push(message);
   },
   async showErrorMessage(message: string): Promise<void> {
     state.messages.error.push(message);
   },
-  async showWarningMessage(message: string): Promise<undefined> {
+  async showWarningMessage(
+    message: string,
+    ..._rest: unknown[]
+  ): Promise<string | undefined> {
     state.messages.warning.push(message);
-    return undefined;
+    return state.warningQueue.shift();
+  },
+  async withProgress<T>(
+    _options: unknown,
+    task: (
+      progress: { report(value: unknown): void },
+      token: {
+        isCancellationRequested: boolean;
+        onCancellationRequested(listener: () => void): { dispose(): void };
+      },
+    ) => Promise<T>,
+  ): Promise<T> {
+    return task(
+      { report: () => undefined },
+      {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => undefined }),
+      },
+    );
+  },
+};
+
+export const ProgressLocation = {
+  Notification: 15,
+} as const;
+
+export const Uri = {
+  parse(value: string): { toString(): string } {
+    return { toString: () => value };
+  },
+};
+
+export const env = {
+  async openExternal(): Promise<boolean> {
+    return true;
   },
 };
 
@@ -180,3 +223,9 @@ export const lm = {
     };
   },
 };
+
+const originalFetch = globalThis.fetch;
+globalThis.fetch = (async (input: unknown, init?: RequestInit) => {
+  state.fetchCalls.push({ url: String(input), init });
+  return originalFetch(input as string, init);
+}) as typeof fetch;

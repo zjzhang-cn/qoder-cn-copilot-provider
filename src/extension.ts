@@ -11,6 +11,7 @@ import {
 } from "./direct/endpoints";
 import { DirectLimiter } from "./direct/limiter";
 import {
+  exchangeJobToken,
   fetchQoderUserInfo,
   pollDeviceLogin,
   startDeviceLogin,
@@ -238,6 +239,142 @@ export function activate(context: vscode.ExtensionContext): void {
     void vscode.window.showInformationMessage(t("Qoder Direct: signed out."));
   }
 
+  async function importPat(): Promise<void> {
+    const gateway = await promptGateway();
+    if (!gateway) return;
+    const patInput = await vscode.window.showInputBox({
+      title: t("Qoder Direct: import a PAT"),
+      prompt: t(
+        "Create a token in Qoder web: Settings → Personal Access Token, then paste it here.",
+      ),
+      placeHolder: "pt-...",
+      password: true,
+      ignoreFocusOut: true,
+      validateInput: (value) =>
+        value.trim().startsWith("pt-")
+          ? undefined
+          : t("A PAT must start with pt-."),
+    });
+    if (patInput === undefined) return;
+    const pat = patInput.trim();
+    if (!pat.startsWith("pt-")) return;
+
+    const existing = await auth.getAuth();
+    if (existing) {
+      const replace = t("Replace");
+      const choice = await vscode.window.showWarningMessage(
+        t(
+          "Qoder Direct: importing this PAT replaces the current sign-in ({0}).",
+          existing.uid.slice(0, 8),
+        ),
+        { modal: true },
+        replace,
+      );
+      if (choice !== replace) return;
+    }
+
+    const endpoints = endpointsFor(gateway.instance);
+    const machineKey = `qoderDirect.machineId.${gateway.instance ?? "public"}`;
+    let machineId = context.globalState.get<string>(machineKey);
+    if (!machineId) {
+      machineId = randomUUID();
+      await context.globalState.update(machineKey, machineId);
+    }
+    logger.info(
+      `Starting PAT import (${gateway.instance ?? "public"}).`,
+    );
+
+    try {
+      const { authState, modelCount } = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: t("Qoder Direct: importing PAT"),
+          cancellable: true,
+        },
+        async (_progress, token) => {
+          const controller = new AbortController();
+          const onCancel = token.onCancellationRequested(() =>
+            controller.abort(),
+          );
+          try {
+            if (token.isCancellationRequested) {
+              throw new vscode.CancellationError();
+            }
+            const exchanged = await exchangeJobToken(endpoints, pat, {
+              signal: controller.signal,
+            });
+            // Identity is mandatory: COSY headers derive from uid.
+            const user = await fetchQoderUserInfo(
+              endpoints,
+              exchanged.accessToken,
+              { signal: controller.signal },
+            );
+            if (token.isCancellationRequested) {
+              throw new vscode.CancellationError();
+            }
+            const next: DirectAuth = {
+              version: 1,
+              realm: "cn",
+              ...(gateway.instance ? { instance: gateway.instance } : {}),
+              uid: user.id,
+              ...(user.name ? { name: user.name } : {}),
+              accessToken: exchanged.accessToken,
+              refreshToken: exchanged.refreshToken,
+              expiresAt: exchanged.expiresAt,
+              machineId,
+              personalToken: pat,
+              source: "pat",
+              ...(user.userType ? { userType: user.userType } : {}),
+              ...(user.organizationId
+                ? { organizationId: user.organizationId }
+                : {}),
+              ...(user.organizationName
+                ? { organizationName: user.organizationName }
+                : {}),
+            };
+            await auth.saveAuth(next);
+            await auth.clearPending();
+            await addProviderGroup(next);
+            store.clear();
+            provider.refresh();
+            logger.info(
+              `PAT import succeeded (source=pat instance=${gateway.instance ?? "public"}).`,
+            );
+
+            let count: number | undefined;
+            try {
+              count = (await store.refresh()).length;
+            } catch (error) {
+              logger.error("Model list failed after PAT import", error);
+            }
+            return { authState: next, modelCount: count };
+          } finally {
+            onCancel.dispose();
+          }
+        },
+      );
+
+      void vscode.window.showInformationMessage(
+        modelCount === undefined
+          ? t(
+              "Qoder Direct: signed in with PAT ({0}). Model list is unavailable; check the logs.",
+              authState.name ?? authState.uid,
+            )
+          : t(
+              "Qoder Direct: signed in with PAT ({0}). {1} models available.",
+              authState.name ?? authState.uid,
+              String(modelCount),
+            ),
+      );
+    } catch (error) {
+      if (error instanceof vscode.CancellationError) return;
+      logger.error("PAT import failed", error);
+      void vscode.window.showErrorMessage(
+        t("Qoder Direct: PAT import failed: {0}", errorMessage(error)),
+      );
+    }
+  }
+
   async function createGroup(): Promise<void> {
     const authState = await auth.getAuth();
     if (!authState) {
@@ -299,6 +436,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const commands = [
     vscode.commands.registerCommand("qoderDirect.signIn", async () => {
       await signIn();
+    }),
+    vscode.commands.registerCommand("qoderDirect.importPat", async () => {
+      await importPat();
     }),
     vscode.commands.registerCommand("qoderDirect.signOut", async () => {
       await signOut();
