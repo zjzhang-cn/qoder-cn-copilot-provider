@@ -185,6 +185,7 @@ export class QoderProvider
           },
           onUsage: (usage) => {
             this.log.info(`Usage: ${JSON.stringify(usage)}`);
+            this.reportUsage(progress, usage);
           },
         },
         controller.signal,
@@ -212,6 +213,37 @@ export class QoderProvider
 
   refresh(): void {
     this.changeEmitter.fire();
+  }
+
+  /**
+   * Forward upstream token usage to VS Code. The chat UI reads usage from a
+   * `LanguageModelDataPart` with mime type "usage" carrying the OpenAI-style
+   * usage JSON (prompt_tokens / completion_tokens / ...). This is the same
+   * stable-API channel the built-in providers use; without it the UI shows 0.
+   */
+  private reportUsage(
+    progress: vscode.Progress<vscode.LanguageModelResponsePart>,
+    usage: unknown,
+  ): void {
+    if (!isRecord(usage)) return;
+    const promptTokens = usage.prompt_tokens;
+    const completionTokens = usage.completion_tokens;
+    if (
+      typeof promptTokens !== "number" &&
+      typeof completionTokens !== "number"
+    ) {
+      return;
+    }
+    try {
+      progress.report(
+        new vscode.LanguageModelDataPart(
+          new TextEncoder().encode(JSON.stringify(usage)),
+          "usage",
+        ),
+      );
+    } catch (error) {
+      this.log.error("Failed to report usage", error);
+    }
   }
 
   dispose(): void {

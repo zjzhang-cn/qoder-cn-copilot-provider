@@ -4,7 +4,7 @@
 
 - Standalone VS Code extension **Qoder CN Provider for Copilot** that exposes Qoder CN models as a native language-model chat provider.
 - Layout: `src/extension.ts` (activation/commands), `src/provider.ts` (VS Code provider), `src/direct/*` (Qoder OAuth/COSY/catalog/chat), `src/core/*` (VS Code-free model/message/SSE helpers), `assets/baseprompt.json` (MIT attribution in `NOTICE`), `test/*`.
-- `npm test` currently runs 25 files / 163 tests; keep this line updated.
+- `npm test` currently runs 25 files / 165 tests; keep this line updated.
 
 ## Design decisions
 
@@ -17,6 +17,7 @@
 - VPC accepts only a bare instance name (`acme`); derive website/openapi/gateway hosts. No public fallback for VPC.
 - Model ids are Qoder `upstream_key`s; display names are UI-only. The model list is a signed **GET with a body** (`node:https`, never global `fetch`).
 - Chat uses the outer Qoder SSE envelope, `model_config.max_input_tokens` for Context Size, `reasoning_effort` for Effort Level, and a conversation id derived from workspace + system prompt + first user message.
+- Token usage is forwarded to VS Code as a `LanguageModelDataPart` with mime `"usage"` carrying the upstream OpenAI-style usage JSON (the stable-API channel the built-in providers use); malformed usage is ignored, and usage is also logged.
 - Models are only served through the provider group; groupless discovery returns `[]`. Deleting the group removes models; sign-out is separate.
 - One chat at a time + 300ms gap; `DirectLimiter` coordinates across VS Code windows via a lock file.
 - Fixed protocol version constants; log version-gate errors instead of forging a higher client version.

@@ -27,6 +27,7 @@ const MODEL: HubModel = {
 class FakeBackend implements BackendClient {
   readonly requests: ChatRequest[] = [];
   tools: ToolCallResult[] = [];
+  usage: unknown;
 
   async fetchModels(): Promise<HubModel[]> {
     return [MODEL];
@@ -39,6 +40,7 @@ class FakeBackend implements BackendClient {
     this.requests.push(request);
     handlers.onText("Hello");
     for (const call of this.tools) handlers.onToolCall(call);
+    if (this.usage !== undefined) handlers.onUsage?.(this.usage);
   }
 }
 
@@ -225,6 +227,86 @@ describe("QoderProvider (direct)", () => {
         token(),
       ),
     ).rejects.toThrow("Qoder Direct: request timed out after 600000 ms.");
+    provider.dispose();
+  });
+
+  it("reports upstream usage as a usage DataPart", async () => {
+    const { provider, backend } = createProvider();
+    backend.usage = {
+      prompt_tokens: 45047,
+      completion_tokens: 78,
+      total_tokens: 45125,
+      prompt_tokens_details: { cached_tokens: 43648 },
+      completion_tokens_details: { reasoning_tokens: 0 },
+    };
+    await provider.provideLanguageModelChatInformation(
+      {
+        silent: false,
+        configuration: {},
+      } as unknown as vscodeTypes.PrepareLanguageModelChatModelOptions,
+      token(),
+    );
+    const parts: unknown[] = [];
+    await provider.provideLanguageModelChatResponse(
+      {
+        id: "qmodel_38max",
+        name: "Qwen3.8-Max",
+        family: "qmodel_38max",
+        version: "1.0.0",
+        maxInputTokens: 200_000,
+        maxOutputTokens: 16_000,
+        capabilities: { toolCalling: true, imageInput: false },
+      },
+      [{ role: 1, content: [{ value: "hi" }], name: undefined }],
+      chatOptions(),
+      progress(parts),
+      token(),
+    );
+    const usagePart = parts.find(
+      (part) => part instanceof vscode.LanguageModelDataPart,
+    ) as vscode.LanguageModelDataPart | undefined;
+    expect(usagePart).toBeDefined();
+    expect(usagePart?.mimeType).toBe("usage");
+    const decoded = JSON.parse(
+      new TextDecoder().decode(usagePart?.data ?? new Uint8Array()),
+    ) as Record<string, unknown>;
+    expect(decoded).toMatchObject({
+      prompt_tokens: 45047,
+      completion_tokens: 78,
+      total_tokens: 45125,
+    });
+    provider.dispose();
+  });
+
+  it("ignores malformed usage without throwing", async () => {
+    const { provider, backend } = createProvider();
+    backend.usage = { not_tokens: true };
+    await provider.provideLanguageModelChatInformation(
+      {
+        silent: false,
+        configuration: {},
+      } as unknown as vscodeTypes.PrepareLanguageModelChatModelOptions,
+      token(),
+    );
+    const parts: unknown[] = [];
+    await provider.provideLanguageModelChatResponse(
+      {
+        id: "qmodel_38max",
+        name: "Qwen3.8-Max",
+        family: "qmodel_38max",
+        version: "1.0.0",
+        maxInputTokens: 200_000,
+        maxOutputTokens: 16_000,
+        capabilities: { toolCalling: true, imageInput: false },
+      },
+      [{ role: 1, content: [{ value: "hi" }], name: undefined }],
+      chatOptions(),
+      progress(parts),
+      token(),
+    );
+    expect(
+      parts.some((part) => part instanceof vscode.LanguageModelDataPart),
+    ).toBe(false);
     provider.dispose();
   });
 

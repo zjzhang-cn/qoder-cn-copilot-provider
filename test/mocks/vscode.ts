@@ -58,6 +58,20 @@ export class LanguageModelToolCallPart {
   ) {}
 }
 
+export class LanguageModelDataPart {
+  constructor(
+    public data: Uint8Array,
+    public mimeType: string,
+  ) {}
+
+  static json(value: unknown, mime = "application/json"): LanguageModelDataPart {
+    return new LanguageModelDataPart(
+      new TextEncoder().encode(JSON.stringify(value)),
+      mime,
+    );
+  }
+}
+
 export const LanguageModelChatToolMode = {
   Auto: 1,
   Required: 2,
