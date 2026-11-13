@@ -61,7 +61,7 @@ npm run typecheck
 npm test
 npm run build
 npm run package
-code --install-extension qoder-cn-copilot-provider-0.2.1.vsix
+code --install-extension qoder-cn-copilot-provider-0.2.2.vsix
 ```
 
 按 F5 启动扩展开发宿主。Provider API 是稳定接口，不需要 proposed-API 参数。单元测试全部使用 mock，不需要真实 Qoder 账号；真实联调需要 Qoder 账号和浏览器设备授权。
