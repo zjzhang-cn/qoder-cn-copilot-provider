@@ -86,6 +86,7 @@ describe("DirectAuthManager", () => {
     const first = new DirectAuthManager(options);
     const second = new DirectAuthManager(options);
     const original = auth();
+    await first.saveAuth(original);
 
     const [left, right] = await Promise.all([
       first.ensureFresh(original),
@@ -194,10 +195,22 @@ describe("DirectAuthManager PAT sessions", () => {
     });
   }
 
+  /** Refresh requires a persisted record; seed it before exercising paths. */
+  async function seededManager(
+    fetchImpl: typeof fetch,
+    dir: string,
+    record: DirectAuth = patAuth(),
+    secrets = new FakeSecrets(),
+  ): Promise<DirectAuthManager> {
+    const manager = managerWith(fetchImpl, dir, secrets);
+    await manager.saveAuth(record);
+    return manager;
+  }
+
   it("routes jrt- refresh tokens to the jobToken endpoint", async () => {
     const dir = await tempDir();
     const urls: string[] = [];
-    const manager = managerWith(async (input) => {
+    const manager = await seededManager(async (input) => {
       urls.push(String(input));
       return jsonResponse({
         token: "jt-new",
@@ -217,7 +230,7 @@ describe("DirectAuthManager PAT sessions", () => {
   it("falls back to PAT re-exchange when job refresh fails", async () => {
     const dir = await tempDir();
     const urls: string[] = [];
-    const manager = managerWith(async (input) => {
+    const manager = await seededManager(async (input) => {
       urls.push(String(input));
       if (urls.length === 1) {
         return jsonResponse({ message: "jrt expired" }, 401);
@@ -240,7 +253,7 @@ describe("DirectAuthManager PAT sessions", () => {
   it("falls back to PAT re-exchange on network errors too", async () => {
     const dir = await tempDir();
     let calls = 0;
-    const manager = managerWith(async () => {
+    const manager = await seededManager(async () => {
       calls += 1;
       if (calls === 1) throw new Error("socket hang up");
       return jsonResponse({ token: "jt-fresh", expires_in: 1000 });
@@ -255,11 +268,12 @@ describe("DirectAuthManager PAT sessions", () => {
   it("exchanges directly when the PAT record has no jrt-", async () => {
     const dir = await tempDir();
     const urls: string[] = [];
-    const manager = managerWith(async (input) => {
+    const record = patAuth({ refreshToken: "" });
+    const manager = await seededManager(async (input) => {
       urls.push(String(input));
       return jsonResponse({ token: "jt-fresh", expires_in: 1000 });
-    }, dir);
-    const result = await manager.ensureFresh(patAuth({ refreshToken: "" }));
+    }, dir, record);
+    const result = await manager.ensureFresh(record);
     expect(urls).toEqual([
       "https://acme-openapi.vpc.qoder.com.cn/api/v1/jobToken/exchange",
     ]);
@@ -290,7 +304,8 @@ describe("DirectAuthManager PAT sessions", () => {
   it("keeps device records on the device endpoint even with a PAT present", async () => {
     const dir = await tempDir();
     const urls: string[] = [];
-    const manager = managerWith(async (input) => {
+    const record = auth({ personalToken: "pt-secret", source: "pat" });
+    const manager = await seededManager(async (input) => {
       urls.push(String(input));
       return jsonResponse({
         token: "dt-new",
@@ -298,10 +313,8 @@ describe("DirectAuthManager PAT sessions", () => {
         user_id: "uid",
         expires_in: 1000,
       });
-    }, dir);
-    const result = await manager.ensureFresh(
-      auth({ personalToken: "pt-secret", source: "pat" }),
-    );
+    }, dir, record);
+    const result = await manager.ensureFresh(record);
     expect(urls).toEqual([
       "https://acme-openapi.vpc.qoder.com.cn/api/v1/deviceToken/refresh",
     ]);
@@ -321,5 +334,193 @@ describe("DirectAuthManager PAT sessions", () => {
     const legacy = await manager.getAuth();
     expect(legacy).toMatchObject({ uid: "uid" });
     expect(legacy?.personalToken).toBeUndefined();
+  });
+});
+
+describe("DirectAuthManager concurrency", () => {
+  function patAuth(overrides: Partial<DirectAuth> = {}): DirectAuth {
+    return auth({
+      accessToken: "jt-old",
+      refreshToken: "jrt-old",
+      personalToken: "pt-secret",
+      source: "pat",
+      ...overrides,
+    });
+  }
+
+  function managerWith(
+    fetchImpl: typeof fetch,
+    dir: string,
+    secrets = new FakeSecrets(),
+  ): DirectAuthManager {
+    return new DirectAuthManager({
+      secrets,
+      authKey: AUTH_KEY,
+      pendingKey: PENDING_KEY,
+      lockDir: dir,
+      fetchImpl,
+      now: () => 1000,
+    });
+  }
+
+  it("sign-out queued behind a refresh wins (no resurrection)", async () => {
+    const dir = await tempDir();
+    const secrets = new FakeSecrets();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const manager = managerWith(async () => {
+      started();
+      await gate;
+      return jsonResponse({ token: "jt-new", expires_in: 3_600_000 });
+    }, dir, secrets);
+    await manager.saveAuth(patAuth());
+
+    const refreshing = manager.ensureFresh(patAuth());
+    await inFlight;
+    // Sign-out waits for the auth lock the refresh holds; it must run after
+    // the refresh writes, so the final state is signed-out, not resurrected.
+    const cleared = manager.clearAuth();
+    release();
+    await refreshing;
+    await cleared;
+    expect(await manager.getAuth()).toBeUndefined();
+  });
+
+  it("an import queued behind an old-account refresh wins (no clobber)", async () => {
+    const dir = await tempDir();
+    const secrets = new FakeSecrets();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const manager = managerWith(async () => {
+      started();
+      await gate;
+      return jsonResponse({ token: "jt-old-account", expires_in: 3_600_000 });
+    }, dir, secrets);
+    const oldRecord = patAuth();
+    await manager.saveAuth(oldRecord);
+
+    const refreshing = manager.ensureFresh(oldRecord);
+    await inFlight;
+    // The import waits for the lock; it writes after the old refresh, so the
+    // freshly imported account is the final state, not the old one.
+    const imported = patAuth({ uid: "uid-new", personalToken: "pt-new" });
+    const importing = manager.saveAuth(imported);
+    release();
+    await refreshing;
+    await importing;
+    expect(await manager.getAuth()).toMatchObject({
+      uid: "uid-new",
+      personalToken: "pt-new",
+    });
+  });
+
+  it("bails when the stored account changed before the refresh acquired the lock", async () => {
+    const dir = await tempDir();
+    const secrets = new FakeSecrets();
+    let calls = 0;
+    const manager = managerWith(async () => {
+      calls += 1;
+      return jsonResponse({ token: "jt-new", expires_in: 3_600_000 });
+    }, dir, secrets);
+    // Storage holds a DIFFERENT account than the snapshot being refreshed.
+    await manager.saveAuth(patAuth({ uid: "uid-other" }));
+    await expect(manager.ensureFresh(patAuth())).rejects.toMatchObject({
+      status: 401,
+    });
+    // No network call and no write: the other account is untouched.
+    expect(calls).toBe(0);
+    expect(await manager.getAuth()).toMatchObject({ uid: "uid-other" });
+  });
+
+  it("shares one refresh across callers without binding a caller signal", async () => {
+    const dir = await tempDir();
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const manager = managerWith(async () => {
+      calls += 1;
+      started();
+      await gate;
+      return jsonResponse({
+        token: "jt-new",
+        refresh_token: "jrt-new",
+        expires_in: 3_600_000,
+      });
+    }, dir);
+    await manager.saveAuth(patAuth());
+
+    const controllerA = new AbortController();
+    const first = manager.ensureFresh(patAuth(), controllerA.signal);
+    await inFlight;
+    const second = manager.ensureFresh(patAuth());
+    // Cancelling caller A must not abort the shared refresh serving B.
+    controllerA.abort();
+    release();
+
+    const [left, right] = await Promise.all([first, second]);
+    expect(calls).toBe(1);
+    expect(left.accessToken).toBe("jt-new");
+    expect(right.accessToken).toBe("jt-new");
+  });
+
+  it("forceRefresh chains a forced refresh after a non-forced one", async () => {
+    const dir = await tempDir();
+    const urls: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let started!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const manager = managerWith(async (input) => {
+      urls.push(String(input));
+      if (urls.length === 1) {
+        started();
+        await gate;
+        // Non-forced refresh returns a locally-fresh token.
+        return jsonResponse({
+          token: "jt-stale",
+          refresh_token: "jrt-stale",
+          expires_in: 3_600_000,
+        });
+      }
+      return jsonResponse({
+        token: "jt-forced",
+        refresh_token: "jrt-forced",
+        expires_in: 3_600_000,
+      });
+    }, dir);
+    await manager.saveAuth(patAuth());
+
+    const nonForced = manager.ensureFresh(patAuth());
+    await inFlight;
+    const forced = manager.forceRefresh(patAuth());
+    release();
+
+    const forcedResult = await forced;
+    await nonForced;
+    // The forced refresh must actually hit the network, not piggyback.
+    expect(urls).toHaveLength(2);
+    expect(forcedResult.accessToken).toBe("jt-forced");
   });
 });

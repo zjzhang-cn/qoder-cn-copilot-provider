@@ -45,13 +45,19 @@ export interface DirectAuthManagerOptions {
 }
 
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
+const LOCK_OPTIONS = { timeoutMs: 30_000, ttlMs: 60_000 };
 
 export class DirectAuthManager {
   private refreshing: Promise<DirectAuth> | undefined;
+  private refreshForced = false;
   private readonly now: () => number;
 
   constructor(private readonly options: DirectAuthManagerOptions) {
     this.now = options.now ?? Date.now;
+  }
+
+  private get lockPath(): string {
+    return join(this.options.lockDir, "qoder-direct-auth.lock");
   }
 
   async getAuth(): Promise<DirectAuth | undefined> {
@@ -65,13 +71,20 @@ export class DirectAuthManager {
     }
   }
 
-  async saveAuth(auth: DirectAuth): Promise<void> {
+  /** Raw write; callers must already hold the auth lock. */
+  private async writeAuth(auth: DirectAuth): Promise<void> {
     await this.options.secrets.store(this.options.authKey, JSON.stringify(auth));
   }
 
+  async saveAuth(auth: DirectAuth): Promise<void> {
+    await withFileLock(this.lockPath, LOCK_OPTIONS, () => this.writeAuth(auth));
+  }
+
   async clearAuth(): Promise<void> {
-    await this.options.secrets.delete(this.options.authKey);
-    await this.options.secrets.delete(this.options.pendingKey);
+    await withFileLock(this.lockPath, LOCK_OPTIONS, async () => {
+      await this.options.secrets.delete(this.options.authKey);
+      await this.options.secrets.delete(this.options.pendingKey);
+    });
   }
 
   async getPending(): Promise<PendingLogin | undefined> {
@@ -101,11 +114,8 @@ export class DirectAuthManager {
     if (!auth.refreshToken && !auth.personalToken) {
       throw new HubError("Qoder session expired. Sign in again.", 401);
     }
-    if (this.refreshing) return this.refreshing;
-    this.refreshing = this.refreshWithLock(auth, signal, false).finally(() => {
-      this.refreshing = undefined;
-    });
-    return this.refreshing;
+    if (signal?.aborted) throw new HubError("Qoder token refresh cancelled.");
+    return this.runRefresh(auth, false);
   }
 
   async forceRefresh(
@@ -115,39 +125,75 @@ export class DirectAuthManager {
     if (!auth.refreshToken && !auth.personalToken) {
       throw new HubError("Qoder session expired. Sign in again.", 401);
     }
+    if (signal?.aborted) throw new HubError("Qoder token refresh cancelled.");
+    // A non-forced refresh in flight may return a locally-fresh but
+    // server-revoked token; chain a forced refresh after it instead of
+    // piggybacking on its result.
+    if (this.refreshing && !this.refreshForced) {
+      const prior = this.refreshing;
+      const chained = prior
+        .catch(() => undefined)
+        .then(() => this.startRefresh(auth, true));
+      this.refreshing = chained;
+      this.refreshForced = true;
+      chained.finally(() => {
+        if (this.refreshing === chained) {
+          this.refreshing = undefined;
+          this.refreshForced = false;
+        }
+      });
+      return chained;
+    }
+    return this.runRefresh(auth, true);
+  }
+
+  /**
+   * Shared single-flight refresh. The refresh is a shared resource: it is NOT
+   * bound to any one caller's abort signal, so cancelling one request cannot
+   * abort another request's in-flight refresh. Callers handle their own
+   * cancellation at the request layer.
+   */
+  private runRefresh(auth: DirectAuth, force: boolean): Promise<DirectAuth> {
     if (this.refreshing) return this.refreshing;
-    this.refreshing = this.refreshWithLock(auth, signal, true).finally(() => {
-      this.refreshing = undefined;
+    return this.startRefresh(auth, force);
+  }
+
+  private startRefresh(auth: DirectAuth, force: boolean): Promise<DirectAuth> {
+    const promise = this.refreshWithLock(auth, force).finally(() => {
+      if (this.refreshing === promise) {
+        this.refreshing = undefined;
+        this.refreshForced = false;
+      }
     });
-    return this.refreshing;
+    this.refreshing = promise;
+    this.refreshForced = force;
+    return promise;
   }
 
   private async refreshWithLock(
     auth: DirectAuth,
-    signal: AbortSignal | undefined,
     force: boolean,
   ): Promise<DirectAuth> {
-    const lockPath = join(this.options.lockDir, "qoder-direct-auth.lock");
-    return withFileLock(
-      lockPath,
-      { timeoutMs: 30_000, ttlMs: 60_000 },
-      async () => {
-        const stored = await this.getAuth();
-        const current =
-          stored && stored.uid === auth.uid ? stored : auth;
-        if (!force && current.expiresAt - this.now() > REFRESH_MARGIN_MS) {
-          return current;
-        }
-        if (!current.refreshToken && !current.personalToken) {
-          throw new HubError("Qoder session expired. Sign in again.", 401);
-        }
-        if (signal?.aborted) throw new HubError("Qoder token refresh cancelled.");
-        const endpoints = endpointsFor(current.instance);
-        const deps = {
-          fetchImpl: this.options.fetchImpl,
-          now: this.now,
-          signal,
-        };
+    return withFileLock(this.lockPath, LOCK_OPTIONS, async () => {
+      const stored = await this.getAuth();
+      // The account may have been replaced (import/sign-in) or signed out
+      // while this refresh was pending. Never resurrect or overwrite it with
+      // a stale snapshot: bail instead of falling back to the passed auth.
+      if (!stored || stored.uid !== auth.uid) {
+        throw new HubError("Qoder session changed. Sign in again.", 401);
+      }
+      const current = stored;
+      if (!force && current.expiresAt - this.now() > REFRESH_MARGIN_MS) {
+        return current;
+      }
+      if (!current.refreshToken && !current.personalToken) {
+        throw new HubError("Qoder session expired. Sign in again.", 401);
+      }
+      const endpoints = endpointsFor(current.instance);
+      const deps = {
+        fetchImpl: this.options.fetchImpl,
+        now: this.now,
+      };
         let refreshed: {
           accessToken: string;
           refreshToken: string;
@@ -191,7 +237,7 @@ export class DirectAuthManager {
           refreshToken: refreshed.refreshToken || current.refreshToken,
           expiresAt: refreshed.expiresAt,
         };
-        await this.saveAuth(next);
+        await this.writeAuth(next);
         return next;
       },
     );
