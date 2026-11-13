@@ -2,6 +2,7 @@ import { request as httpsRequest } from "node:https";
 import {
   HubCancelledError,
   HubError,
+  HubTimeoutError,
   type BackendClient,
   type ChatRequest,
   type StreamHandlers,
@@ -433,7 +434,9 @@ function httpsStream(
     );
     req.on("error", reject);
     req.setTimeout(options.timeoutMs ?? CHAT_TIMEOUT_MS, () => {
-      req.destroy(new Error("Qoder chat request timed out."));
+      req.destroy(
+        new HubTimeoutError(options.timeoutMs ?? CHAT_TIMEOUT_MS),
+      );
     });
     req.write(options.body);
     req.end();

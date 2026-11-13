@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type {
-  BackendClient,
-  ChatRequest,
-  StreamHandlers,
-  ToolCallResult,
+import {
+  HubTimeoutError,
+  type BackendClient,
+  type ChatRequest,
+  type StreamHandlers,
+  type ToolCallResult,
 } from "../src/backend";
 import type { HubModel } from "../src/core/types";
 import type { Logger } from "../src/logger";
@@ -192,6 +193,38 @@ describe("QoderProvider (direct)", () => {
       name: "read_file",
       input: { path: "a.txt" },
     });
+    provider.dispose();
+  });
+
+  it("localizes a chat timeout instead of leaking the raw transport text", async () => {
+    const { provider, backend } = createProvider();
+    backend.streamChat = async () => {
+      throw new HubTimeoutError(600_000);
+    };
+    await provider.provideLanguageModelChatInformation(
+      {
+        silent: false,
+        configuration: {},
+      } as unknown as vscodeTypes.PrepareLanguageModelChatModelOptions,
+      token(),
+    );
+    await expect(
+      provider.provideLanguageModelChatResponse(
+        {
+          id: "qmodel_38max",
+          name: "Qwen3.8-Max",
+          family: "qmodel_38max",
+          version: "1.0.0",
+          maxInputTokens: 200_000,
+          maxOutputTokens: 16_000,
+          capabilities: { toolCalling: true, imageInput: false },
+        },
+        [{ role: 1, content: [{ value: "hi" }], name: undefined }],
+        chatOptions(),
+        progress([]),
+        token(),
+      ),
+    ).rejects.toThrow("Qoder Direct: request timed out after 600000 ms.");
     provider.dispose();
   });
 });

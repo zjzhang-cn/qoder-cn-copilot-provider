@@ -1,5 +1,5 @@
 import { request as httpsRequest, type RequestOptions } from "node:https";
-import { HubError } from "../backend";
+import { HubError, HubTimeoutError } from "../backend";
 import type { HubModel } from "../core/types";
 import { isRecord } from "../core/util";
 import { MODELS_PATH } from "./constants";
@@ -232,7 +232,7 @@ export function httpsRequestText(
     });
     req.on("error", reject);
     req.setTimeout(request.timeoutMs ?? 15_000, () => {
-      req.destroy(new Error("Qoder model list request timed out."));
+      req.destroy(new HubTimeoutError(request.timeoutMs ?? 15_000));
     });
     if (request.body !== undefined) req.write(request.body);
     req.end();
