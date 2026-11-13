@@ -35,6 +35,6 @@ describe("direct Qoder endpoints", () => {
     expect(() => normalizeVpcInstance("acme.vpc.qoder.com.cn")).toThrow();
     expect(() => normalizeVpcInstance("https://acme")).toThrow();
     expect(() => normalizeVpcInstance("acme:8443")).toThrow();
-    expect(() => normalizeVpcInstance("-gehc")).toThrow();
+    expect(() => normalizeVpcInstance("-acme")).toThrow();
   });
 });
