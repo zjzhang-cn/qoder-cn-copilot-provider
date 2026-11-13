@@ -46,6 +46,7 @@
   "Qoder Direct: request timed out after {0} ms.": "Qoder Direct：请求在 {0} 毫秒后超时。",
   "Qoder Direct: no models available. Sign in to Qoder first.": "Qoder Direct：没有可用模型。请先登录 Qoder。",
   "Sign In": "登录",
+  "Import PAT": "导入 PAT",
   "Create Provider Group": "创建模型提供方分组",
   "Show Logs": "显示日志"
 }

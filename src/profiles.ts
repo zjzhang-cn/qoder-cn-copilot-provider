@@ -11,6 +11,7 @@ export const DIRECT_PROFILE: BackendProfile = {
   configSection: "qoderDirect",
   setup: {
     signIn: "qoderDirect.signIn",
+    importPat: "qoderDirect.importPat",
     signOut: "qoderDirect.signOut",
     createGroup: "qoderDirect.createProviderGroup",
     showLogs: "qoderDirect.showLogs",

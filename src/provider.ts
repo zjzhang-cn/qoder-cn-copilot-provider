@@ -226,10 +226,12 @@ export class QoderProvider
     this.lastSetupPromptAt = now;
 
     const signIn = t("Sign In");
+    const importPat = t("Import PAT");
     const createGroup = t("Create Provider Group");
     const showLogs = t("Show Logs");
     const actions = [
       ...(this.profile.setup.signIn ? [signIn] : []),
+      ...(this.profile.setup.importPat ? [importPat] : []),
       ...(this.profile.setup.createGroup ? [createGroup] : []),
       showLogs,
     ];
@@ -242,6 +244,8 @@ export class QoderProvider
       .then((choice) => {
         if (choice === signIn && this.profile.setup.signIn) {
           void vscode.commands.executeCommand(this.profile.setup.signIn);
+        } else if (choice === importPat && this.profile.setup.importPat) {
+          void vscode.commands.executeCommand(this.profile.setup.importPat);
         } else if (choice === createGroup && this.profile.setup.createGroup) {
           void vscode.commands.executeCommand(this.profile.setup.createGroup);
         } else if (choice === showLogs) {

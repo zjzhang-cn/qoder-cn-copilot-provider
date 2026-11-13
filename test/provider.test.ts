@@ -227,4 +227,28 @@ describe("QoderProvider (direct)", () => {
     ).rejects.toThrow("Qoder Direct: request timed out after 600000 ms.");
     provider.dispose();
   });
+
+  it("offers Import PAT in the no-models recovery prompt", async () => {
+    const { provider, backend } = createProvider();
+    backend.fetchModels = async () => [];
+    vscode.state.warningChoice = "Import PAT";
+    vscode.state.executed.length = 0;
+
+    await provider.provideLanguageModelChatInformation(
+      {
+        silent: false,
+        configuration: {},
+      } as unknown as vscodeTypes.PrepareLanguageModelChatModelOptions,
+      token(),
+    );
+    // Let the floating showWarningMessage().then() dispatch run.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(vscode.state.warningActions).toContain("Import PAT");
+    expect(vscode.state.executed).toContainEqual({
+      command: "qoderDirect.importPat",
+      args: [],
+    });
+    provider.dispose();
+  });
 });

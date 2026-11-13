@@ -77,6 +77,8 @@ export interface BackendSetupCommands {
   readonly setApiKey?: string;
   /** Direct profile: run the OAuth sign-in flow. */
   readonly signIn?: string;
+  /** Direct profile: import a PAT (personal access token). */
+  readonly importPat?: string;
   /** Direct profile: clear the stored credentials. */
   readonly signOut?: string;
   /** Recreate the provider group after the native Delete action. */

@@ -87,6 +87,10 @@ export const state = {
   fetchCalls: [] as Array<{ url: string; init?: RequestInit }>,
   /** When set, withProgress fires cancellation right after the task starts. */
   cancelProgress: false,
+  /** Captured action buttons from the last showWarningMessage call. */
+  warningActions: [] as string[],
+  /** Choice returned by showWarningMessage (modal confirm / recovery prompt). */
+  warningChoice: undefined as string | undefined,
   messages: {
     info: [] as string[],
     error: [] as string[],
@@ -124,10 +128,13 @@ export const window = {
   },
   async showWarningMessage(
     message: string,
-    ..._rest: unknown[]
+    ...rest: unknown[]
   ): Promise<string | undefined> {
     state.messages.warning.push(message);
-    return state.warningQueue.shift();
+    state.warningActions = rest.filter(
+      (item): item is string => typeof item === "string",
+    );
+    return state.warningChoice ?? state.warningQueue.shift();
   },
   async withProgress<T>(
     _options: unknown,
