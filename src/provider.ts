@@ -16,6 +16,7 @@ import type { ProviderModel } from "./core/types";
 import type { ModelStore } from "./core/modelStore";
 import { estimateTokensFor } from "./core/tokens";
 import { isRecord } from "./core/util";
+import { localizedAuthMessage } from "./authErrors";
 import { t } from "./l10n";
 import type { Logger } from "./logger";
 
@@ -277,16 +278,17 @@ export class QoderProvider
       );
     }
     if (error instanceof HubError) {
+      const message = localizedAuthMessage(error);
       if (error.status === 401) {
-        return vscode.LanguageModelError.NoPermissions(error.message);
+        return vscode.LanguageModelError.NoPermissions(message);
       }
       if (error.status === 403) {
-        return vscode.LanguageModelError.Blocked(error.message);
+        return vscode.LanguageModelError.Blocked(message);
       }
       if (error.status === 404) {
-        return vscode.LanguageModelError.NotFound(error.message);
+        return vscode.LanguageModelError.NotFound(message);
       }
-      return new Error(error.message, { cause: error });
+      return new Error(message, { cause: error });
     }
     return error instanceof Error ? error : new Error(String(error));
   }

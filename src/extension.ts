@@ -18,6 +18,7 @@ import {
 } from "./direct/oauth";
 import { ModelStore } from "./core/modelStore";
 import { redactTokens } from "./core/util";
+import { localizedErrorMessage } from "./authErrors";
 import { PENDING_KEY } from "./config";
 import { t } from "./l10n";
 import { Logger } from "./logger";
@@ -494,6 +495,5 @@ export function deactivate(): void {
 }
 
 function errorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return redactTokens(message);
+  return redactTokens(localizedErrorMessage(error));
 }

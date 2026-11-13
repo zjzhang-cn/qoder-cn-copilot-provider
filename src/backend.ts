@@ -28,6 +28,13 @@ export interface StreamHandlers {
 }
 
 export class HubError extends Error {
+  /**
+   * Stable machine-readable identifier for presentation-layer localization.
+   * The English `message` stays the source of truth for logs and tests; the
+   * UI maps `code` to a localized string and falls back to `message`.
+   */
+  code?: string;
+
   constructor(
     message: string,
     readonly status?: number,

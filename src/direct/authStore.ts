@@ -112,9 +112,9 @@ export class DirectAuthManager {
   async ensureFresh(auth: DirectAuth, signal?: AbortSignal): Promise<DirectAuth> {
     if (auth.expiresAt - this.now() > REFRESH_MARGIN_MS) return auth;
     if (!auth.refreshToken && !auth.personalToken) {
-      throw new HubError("Qoder session expired. Sign in again.", 401);
+      throw withCode(new HubError("Qoder session expired. Sign in again.", 401), "session-expired");
     }
-    if (signal?.aborted) throw new HubError("Qoder token refresh cancelled.");
+    if (signal?.aborted) throw withCode(new HubError("Qoder token refresh cancelled."), "refresh-cancelled");
     return this.runRefresh(auth, false);
   }
 
@@ -123,9 +123,9 @@ export class DirectAuthManager {
     signal?: AbortSignal,
   ): Promise<DirectAuth> {
     if (!auth.refreshToken && !auth.personalToken) {
-      throw new HubError("Qoder session expired. Sign in again.", 401);
+      throw withCode(new HubError("Qoder session expired. Sign in again.", 401), "session-expired");
     }
-    if (signal?.aborted) throw new HubError("Qoder token refresh cancelled.");
+    if (signal?.aborted) throw withCode(new HubError("Qoder token refresh cancelled."), "refresh-cancelled");
     // A non-forced refresh in flight may return a locally-fresh but
     // server-revoked token; chain a forced refresh after it instead of
     // piggybacking on its result.
@@ -180,14 +180,14 @@ export class DirectAuthManager {
       // while this refresh was pending. Never resurrect or overwrite it with
       // a stale snapshot: bail instead of falling back to the passed auth.
       if (!stored || stored.uid !== auth.uid) {
-        throw new HubError("Qoder session changed. Sign in again.", 401);
+        throw withCode(new HubError("Qoder session changed. Sign in again.", 401), "session-changed");
       }
       const current = stored;
       if (!force && current.expiresAt - this.now() > REFRESH_MARGIN_MS) {
         return current;
       }
       if (!current.refreshToken && !current.personalToken) {
-        throw new HubError("Qoder session expired. Sign in again.", 401);
+        throw withCode(new HubError("Qoder session expired. Sign in again.", 401), "session-expired");
       }
       const endpoints = endpointsFor(current.instance);
       const deps = {
@@ -210,7 +210,7 @@ export class DirectAuthManager {
           // Any failure (network included) falls back, matching the hub.
           try {
             if (!current.refreshToken) {
-              throw new HubError("Qoder job refresh token is missing.", 401);
+              throw withCode(new HubError("Qoder job refresh token is missing.", 401), "job-refresh-missing");
             }
             refreshed = await refreshJobToken(
               endpoints,
@@ -270,16 +270,52 @@ function patExchangeError(error: unknown): HubError {
     (error.status === 401 || error.status === 403) &&
     isSessionDeadMessage(error.message)
   ) {
-    return new HubError(
-      "Qoder PAT is invalid or revoked. Import a new PAT.",
-      401,
-      undefined,
-      { cause: error },
+    return withCode(
+      new HubError(
+        "Qoder PAT is invalid or revoked. Import a new PAT.",
+        401,
+        undefined,
+        { cause: error },
+      ),
+      "pat-revoked",
     );
   }
-  return error instanceof HubError
-    ? error
-    : new HubError(String(error), undefined, undefined, { cause: error });
+  if (error instanceof HubError) return error;
+  // Node fetch failures (DNS/refused/timeout) carry no HTTP status; surface
+  // them as an actionable network error rather than raw "fetch failed".
+  if (isNetworkError(error)) {
+    return withCode(
+      new HubError(
+        "Cannot reach the Qoder server. Check your network or VPC instance.",
+        undefined,
+        undefined,
+        { cause: error },
+      ),
+      "network-unreachable",
+    );
+  }
+  return new HubError(String(error), undefined, undefined, { cause: error });
+}
+
+function withCode(error: HubError, code: string): HubError {
+  error.code = code;
+  return error;
+}
+
+function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  if (
+    code === "ENOTFOUND" ||
+    code === "ECONNREFUSED" ||
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "EAI_AGAIN" ||
+    code === "UND_ERR_CONNECT_TIMEOUT"
+  ) {
+    return true;
+  }
+  return /fetch failed|network|socket|getaddrinfo/i.test(error.message);
 }
 
 function isPendingLogin(value: unknown): value is PendingLogin {

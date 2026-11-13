@@ -111,7 +111,7 @@ export async function pollDeviceLogin(
     },
   );
   if (response.status === 202 || response.status === 404) return undefined;
-  if (!response.ok) throw await authError(response, "Device authorization failed");
+  if (!response.ok) throw await authError(response, "Device authorization failed", "device-auth-failed");
   return parseTokenPayload(await response.json(), deps.now ?? Date.now);
 }
 
@@ -132,10 +132,14 @@ export async function fetchQoderUserInfo(
       signal: requestSignal(deps),
     },
   );
-  if (!response.ok) throw await authError(response, "Failed to read Qoder user info");
+  if (!response.ok) throw await authError(response, "Failed to read Qoder user info", "userinfo-failed");
   const payload = (await response.json()) as Record<string, unknown>;
   const id = firstString(payload.id, payload.uid, payload.user_id);
-  if (!id) throw new HubError("Qoder user info did not contain an id.", response.status);
+  if (!id) {
+    const err = new HubError("Qoder user info did not contain an id.", response.status);
+    err.code = "userinfo-no-id";
+    throw err;
+  }
   return {
     id,
     name: firstString(payload.name, payload.nickname),
@@ -169,7 +173,7 @@ export async function refreshDeviceToken(
       signal: requestSignal(deps),
     },
   );
-  if (!response.ok) throw await authError(response, "Qoder token refresh failed");
+  if (!response.ok) throw await authError(response, "Qoder token refresh failed", "device-refresh-failed");
   return parseTokenPayload(await response.json(), deps.now ?? Date.now);
 }
 
@@ -198,6 +202,7 @@ export async function exchangeJobToken(
     `${endpoints.openapi}${JOB_EXCHANGE_PATH}`,
     { personal_token: personalToken },
     "Qoder PAT exchange failed",
+    "pat-exchange-failed",
     deps,
   );
 }
@@ -212,6 +217,7 @@ export async function refreshJobToken(
     `${endpoints.openapi}${JOB_REFRESH_PATH}`,
     { refresh_token: refreshToken },
     "Qoder job token refresh failed",
+    "job-refresh-failed",
     deps,
   );
 }
@@ -220,6 +226,7 @@ async function postJobToken(
   url: string,
   payload: Record<string, string>,
   errorFallback: string,
+  errorCode: string,
   deps: OAuthDeps,
 ): Promise<JobTokenResult> {
   const response = await (deps.fetchImpl ?? fetch)(url, {
@@ -232,7 +239,7 @@ async function postJobToken(
     body: JSON.stringify(payload),
     signal: requestSignal(deps, 30_000),
   });
-  if (!response.ok) throw await authError(response, errorFallback);
+  if (!response.ok) throw await authError(response, errorFallback, errorCode);
   return parseJobTokenPayload(
     await response.json(),
     (deps.now ?? Date.now)(),
@@ -244,12 +251,20 @@ function parseJobTokenPayload(
   now: number,
 ): JobTokenResult {
   if (typeof payload !== "object" || payload === null) {
-    throw new HubError("Qoder returned an invalid token payload.");
+    {
+      const err = new HubError("Qoder returned an invalid token payload.");
+      err.code = "token-payload-invalid";
+      throw err;
+    }
   }
   const data = payload as TokenPayload;
   const accessToken = firstString(data.token);
   if (!accessToken) {
-    throw new HubError("Qoder token payload is incomplete.");
+    {
+      const err = new HubError("Qoder token payload is incomplete.");
+      err.code = "token-payload-incomplete";
+      throw err;
+    }
   }
   const refreshToken =
     typeof data.refresh_token === "string" ? data.refresh_token : "";
@@ -265,14 +280,22 @@ function parseTokenPayload(
   now: () => number,
 ): DeviceLoginResult {
   if (typeof payload !== "object" || payload === null) {
-    throw new HubError("Qoder returned an invalid token payload.");
+    {
+      const err = new HubError("Qoder returned an invalid token payload.");
+      err.code = "token-payload-invalid";
+      throw err;
+    }
   }
   const data = payload as TokenPayload;
   const accessToken = firstString(data.token, data.device_token);
   const refreshToken = typeof data.refresh_token === "string" ? data.refresh_token : "";
   const userId = firstString(data.user_id);
   if (!accessToken || !refreshToken || !userId) {
-    throw new HubError("Qoder token payload is incomplete.");
+    {
+      const err = new HubError("Qoder token payload is incomplete.");
+      err.code = "token-payload-incomplete";
+      throw err;
+    }
   }
   return {
     accessToken,
@@ -328,7 +351,11 @@ function dateValue(value: unknown): number | undefined {
   return undefined;
 }
 
-async function authError(response: Response, fallback: string): Promise<HubError> {
+async function authError(
+  response: Response,
+  fallback: string,
+  code?: string,
+): Promise<HubError> {
   let detail = fallback;
   try {
     const body = (await response.json()) as Record<string, unknown>;
@@ -344,5 +371,9 @@ async function authError(response: Response, fallback: string): Promise<HubError
   } catch {
     // Keep the fallback.
   }
-  return new HubError(redactTokens(detail), response.status);
+  const hubError = new HubError(redactTokens(detail), response.status);
+  // Only stamp a code when the generic fallback is used; a server-provided
+  // message stays untranslated (its language is not ours to control).
+  if (code && detail === fallback) hubError.code = code;
+  return hubError;
 }

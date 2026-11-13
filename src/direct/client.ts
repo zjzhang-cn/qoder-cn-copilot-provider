@@ -162,7 +162,11 @@ export class DirectQoderClient implements BackendClient {
 
   private async getAuth(signal?: AbortSignal): Promise<DirectAuth> {
     const auth = await this.options.authManager.getAuth();
-    if (!auth) throw new HubError("Sign in to Qoder Direct first.", 401);
+    if (!auth) {
+      const err = new HubError("Sign in to Qoder Direct first.", 401);
+      err.code = "signin-required";
+      throw err;
+    }
     return this.options.authManager.ensureFresh(auth, signal);
   }
 
