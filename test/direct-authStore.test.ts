@@ -444,6 +444,29 @@ describe("DirectAuthManager concurrency", () => {
     expect(await manager.getAuth()).toMatchObject({ uid: "uid-other" });
   });
 
+  it("surfaces a friendly network error when both refresh and exchange fail offline", async () => {
+    const dir = await tempDir();
+    const secrets = new FakeSecrets();
+    const offline = Object.assign(new TypeError("fetch failed"), {
+      code: "ENOTFOUND",
+    });
+    const manager = managerWith(async () => {
+      throw offline;
+    }, dir, secrets);
+    await manager.saveAuth(patAuth());
+    await expect(manager.ensureFresh(patAuth())).rejects.toMatchObject({
+      name: "HubError",
+      code: "network-unreachable",
+      message:
+        "Cannot reach the Qoder server. Check your network or VPC instance.",
+    });
+    // Credentials are intact; the failure did not clear or rewrite them.
+    expect(await manager.getAuth()).toMatchObject({
+      personalToken: "pt-secret",
+      accessToken: "jt-old",
+    });
+  });
+
   it("shares one refresh across callers without binding a caller signal", async () => {
     const dir = await tempDir();
     let calls = 0;
