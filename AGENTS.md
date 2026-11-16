@@ -4,7 +4,7 @@
 
 - Standalone VS Code extension **Qoder CN Provider for Copilot** that exposes Qoder CN models as a native language-model chat provider.
 - Layout: `src/extension.ts` (activation/commands), `src/provider.ts` (VS Code provider), `src/direct/*` (Qoder OAuth/COSY/catalog/chat), `src/core/*` (VS Code-free model/message/SSE helpers), `assets/baseprompt.json` (MIT attribution in `NOTICE`), `test/*`.
-- `npm test` currently runs 27 files / 175 tests; keep this line updated.
+- `npm test` currently runs 27 files / 177 tests; keep this line updated.
 
 ## Design decisions
 
@@ -22,6 +22,7 @@
 - Models are only served through the provider group; groupless discovery returns `[]`. Deleting the group removes models; sign-out is separate.
 - One chat at a time + 300ms gap; `DirectLimiter` coordinates across VS Code windows via a lock file.
 - Fixed protocol version constants; log version-gate errors instead of forging a higher client version.
+- Credit multiplier: catalog `price_factor` (current billing multiplier, 0 = free) maps to `HubModel.price_factor` and is surfaced via `multiplierNumeric` + `pricing` on `ProviderModel` — the picker's dedicated price channel (`modelPickerItemPrimitives.createModelAction` / `modelPickerHover.getModelHoverContent` read these, NOT the free-text `tooltip`, which is only a fallback description and is suppressed once a cost section exists). No "Credits: Nx" tooltip line (removed; the dedicated fields are the only channel). Verified against shipped vscode workbench source.
 - Images enabled for vision models: `imageInput` follows catalog `is_vl` (per-model override can force on/off). Inline images flow as OpenAI `image_url` parts in user-message `content` (the only field upstream reads); top-level `image_urls`/`chat_context.imageUrls` stay null. Non-vision models get a text placeholder instead of images. No transcode/resize; encoded body capped at 29MB (Aliyun SLB 30MB hard limit) with a local 413. Upstream "Image conversion timeout" is coded + localized (no dedicated retry yet). Remote-URL images unsupported. Reasoning content dropped (stable `LanguageModelResponsePart` has no thinking part).
 
 ## Commands (verified)

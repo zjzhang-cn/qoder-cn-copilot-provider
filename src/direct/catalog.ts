@@ -56,6 +56,7 @@ export interface QoderCatalogEntry {
   max_tokens?: number;
   context_config?: Record<string, ContextConfigEntry>;
   thinking_config?: ThinkingConfig;
+  price_factor?: number;
   is_vl?: boolean;
   is_reasoning?: boolean;
   disabled_message_key?: string;
@@ -137,6 +138,9 @@ export function mapCatalogEntry(entry: QoderCatalogEntry): HubModel {
     reasoning_efforts: efforts.values,
     reasoning_default_effort: efforts.defaultValue,
     reasoning_can_disable: efforts.canDisable,
+    ...(nonNegativeNumber(entry.price_factor) !== undefined
+      ? { price_factor: nonNegativeNumber(entry.price_factor) }
+      : {}),
     supports_tool_calls: true,
     capabilities: {
       vision: entry.is_vl === true,
@@ -197,6 +201,12 @@ function reasoningEfforts(entry: QoderCatalogEntry): {
 function positiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? Math.floor(value)
+    : undefined;
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
     : undefined;
 }
 

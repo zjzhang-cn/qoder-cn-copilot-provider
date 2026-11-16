@@ -172,6 +172,7 @@ export function toProviderModels(
         ? { detail: model.upstream_key }
         : {}),
       tooltip,
+      ...creditPricing(model.price_factor),
       maxInputTokens,
       maxOutputTokens,
       maxContextWindowTokens: maxInputTokens + maxOutputTokens,
@@ -350,4 +351,15 @@ function formatTokens(value: number): string {
     return `${Math.round(value / 1_000)}k`;
   }
   return String(value);
+}
+function creditPricing(
+  value: number | undefined,
+): Pick<ProviderModel, "multiplierNumeric" | "pricing"> {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return {};
+  }
+  return {
+    multiplierNumeric: value,
+    pricing: value === 0 ? "Free" : `${value}x`,
+  };
 }

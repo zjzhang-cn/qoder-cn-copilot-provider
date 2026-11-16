@@ -194,4 +194,17 @@ describe("toProviderModels", () => {
     });
     expect(entry?.tooltip).toContain("Context 128k");
   });
+
+  it("exposes multiplierNumeric and pricing for the picker price badge", () => {
+    const [paid] = toProviderModels([model({ price_factor: 0.5 })]);
+    expect(paid).toMatchObject({ multiplierNumeric: 0.5, pricing: "0.5x" });
+    const [free] = toProviderModels([model({ price_factor: 0 })]);
+    expect(free).toMatchObject({ multiplierNumeric: 0, pricing: "Free" });
+    const [unknown] = toProviderModels([model()]);
+    expect(unknown?.multiplierNumeric).toBeUndefined();
+    expect(unknown?.pricing).toBeUndefined();
+    const [invalid] = toProviderModels([model({ price_factor: -1 })]);
+    expect(invalid?.multiplierNumeric).toBeUndefined();
+    expect(invalid?.pricing).toBeUndefined();
+  });
 });

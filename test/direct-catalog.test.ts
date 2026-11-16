@@ -68,6 +68,16 @@ describe("direct Qoder catalog", () => {
     expect(models[1]?.enabled).toBe(false);
   });
 
+  it("keeps the price_factor multiplier, including free models", () => {
+    expect(mapCatalogEntry({ ...ENTRY, price_factor: 0.2 }).price_factor)
+      .toBe(0.2);
+    expect(mapCatalogEntry({ ...ENTRY, price_factor: 0 }).price_factor)
+      .toBe(0);
+    expect(mapCatalogEntry(ENTRY).price_factor).toBeUndefined();
+    expect(mapCatalogEntry({ ...ENTRY, price_factor: -1 }).price_factor)
+      .toBeUndefined();
+  });
+
   it("fetches a signed GET with a body", async () => {
     let captured: {
       url: string;

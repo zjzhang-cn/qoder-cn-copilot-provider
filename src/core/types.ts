@@ -33,6 +33,8 @@ export interface HubModel {
   reasoning_efforts?: string[];
   reasoning_default_effort?: string;
   reasoning_can_disable?: boolean;
+  /** Current credit consumption multiplier (0 = free). */
+  price_factor?: number;
   [key: string]: unknown;
 }
 
@@ -69,6 +71,14 @@ export interface ProviderModel {
   version: string;
   detail?: string;
   tooltip?: string;
+  /**
+   * Credit consumption multiplier. The picker renders the price badge / cost
+   * section from `multiplierNumeric` + `pricing`, NOT from the free-text
+   * `tooltip` (which is only a fallback description). Both must be set for the
+   * "0.5x" readout to appear on the row and in the hover/details card.
+   */
+  multiplierNumeric?: number;
+  pricing?: string;
   maxInputTokens: number;
   maxOutputTokens: number;
   /** Full context window (input + output) for VS Code's context-size UI. */
