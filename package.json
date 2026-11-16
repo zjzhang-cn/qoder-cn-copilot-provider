@@ -5,6 +5,10 @@
   "version": "0.3.1",
   "publisher": "zjzhang-cn",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zjzhang-cn/qoder-cn-copilot-provider.git"
+  },
   "engines": {
     "vscode": "^1.136.0"
   },
