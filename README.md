@@ -2,6 +2,16 @@
 
 在 VS Code 原生聊天模型选择器中直连 Qoder CN。扩展支持 Qoder 设备 OAuth 登录和 PAT（个人访问令牌）导入，直接访问 Qoder 上游，并把可用模型注册为原生语言模型提供方。
 
+## 截图
+
+聊天模型选择器中的 Qoder Direct 分组，右侧显示每个模型的消费倍率（如 `0.5x`）：
+
+![模型选择器中的 Qoder Direct 与消费倍率](assets/screenshots/model-picker.png)
+
+「管理语言模型」视图中的 Qoder Direct 分组（上下文大小 / 功能 / 成本）：
+
+![管理语言模型视图中的 Qoder Direct](assets/screenshots/manage-models.png)
+
 ## 环境要求
 
 - VS Code 1.136 或更高版本。
